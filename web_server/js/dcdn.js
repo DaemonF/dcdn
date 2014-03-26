@@ -74,7 +74,6 @@ function logProtocolStep(stepNumber){
 function getResourceHandle(url, callback){
 	logProtocolStep(1);
 	var rsrcHandle = new ResourceHandle(url, "fake JSON From Server"); // TODO NICK actually fetch from server
-	console.log(rsrcHandle);
 	logProtocolStep(2);
 	callback(rsrcHandle);
 }
@@ -96,27 +95,31 @@ function completeDownload(rsrcHandle, completedChunks, callback){
 // Starts getting the URL by any means and calls back with a local resource URL pointing at the data.
 function startDownload(rsrcHandle, callback){
 	// Make a pointer to this file's spot in the global chunk cache
-	var cacheKey = url+":"+rsrcHandle.hash;
+	var cacheKey = getCacheKey(rsrcHandle);
 	if(typeof chunkCache[cacheKey] === 'undefined'){
 		chunkCache[cacheKey] = [];
 	}
 	var completedChunks = chunkCache[cacheKey];
 
+	// TODO NICK Refactor to dump everything into a priority waiting queue with 
+	//    priority based on a lambda (inOrder for video, by recommendation 
+	//    from server, etc)
+	// TODO NICK Refactor to have an active queue (10 maybe?) and a waiting queue
+	//    to see if that increases throughput or decreases.
+	// TODO NICK Figure out a good system for Video priority and very well controlled 
+	//    fallback to HTTP when the buffer is nearly out
+	
 	var chunksLeft = rsrcHandle.chunkcount;
 	for(var i = 0; i < rsrcHandle.chunkcount; i++){
-		if(typeof completedChunks[i] !== 'undefined'){ // Skip cached chunks
+		getChunk(rsrcHandle, i, function(chunkNumber, data){
+			completedChunks[chunkNumber] = data;
 			chunksLeft--;
-		} else {
-			getChunk(rsrcHandle, i, function(chunkNumber, data){
-				completedChunks[chunkNumber] = data;
-				chunksLeft--;
 
-				// Could complete download from cache or from async calls to getChunk (Here)
-				if(chunksLeft === 0){
-					completeDownload(rsrcHandle, completedChunks, callback);
-				}
-			});
-		}
+			// Could complete download from cache or from async calls to getChunk (Here)
+			if(chunksLeft === 0){
+				completeDownload(rsrcHandle, completedChunks, callback);
+			}
+		});
 
 		// Could complete download from cache (Here) or from async calls to getChunk
 		if(chunksLeft === 0){
@@ -126,6 +129,13 @@ function startDownload(rsrcHandle, callback){
 }
 
 function getChunk(rsrcHandle, chunkNumber, callback){
+	var cacheKey = getCacheKey(rsrcHandle);
+	if(typeof chunkCache[cacheKey][chunkNumber] !== 'undefined'){
+		// TODO NICK Good stat
+		console.log("Fullfilled request from chunkCache. "+rsrcHandle.url + " chunk #"+chunkNumber);
+		callback(chunkNumber, chunkCache[cacheKey][chunkNumber]);
+	}
+	
 	_getChunkP2P(rsrcHandle, chunkNumber, function(data){
 		if(data !== null){
 			callback(chunkNumber, data);
@@ -150,7 +160,7 @@ function _getChunkP2P(rsrcHandle, chunkNumber, callback){
 			callback(chunkNumber, data);
 			return;
 		} else {
-			// TODO NICK Good statistic logging point
+			// TODO NICK Good stat
 			console.log("Failed to get "+rsrcHandle.url+" chunk #"+chunkNumber+" via P2P (Try #"+i+").");
 		}
 	}
