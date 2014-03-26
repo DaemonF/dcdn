@@ -2,16 +2,13 @@ var imap = {}; // imap maps unique urls to the image tags they feed (TODO NICK r
 
 function canonicalize(url){
 	var link = document.createElement('a'); // Helper <a> tag used for canonicalization
-	console.log("Before canonicalization: " + url); // TODO NICK remove
 	link.href = url;
 	url = link.protocol + "//" + link.host + link.pathname + link.search;
-	console.log("After canonicalization: " + url); // TODO NICK remove
 	delete link;
 	return url;
 }
 
 //freedom.on('dcdnReady', function() {
-	console.log("GOT HERRE!!!");
 	// Rewrite all img tags with data-src set.
 	var images = document.getElementsByTagName('img');
 	var urls = []; // urls is the list of URLs we want to obtain via P2P (TODO NICK refactor)
