@@ -28,6 +28,8 @@
 // Defaults for parameters in 'tuning' section of server response
 var DEFAULT_RETRYS_BEFORE_HTTP_FALLBACK = 3; // overridden by rsrcHandle.tuning['try_limit']
 
+
+// TODO NICK These two items being persistant would make this system SOOOO much more efficient
 var chunkCache = {}; // getCacheKey(rsrcHandle) -> list of ArrayBuffers where each is a complete, validated chunk
 var peerConnectionCache = {}; // Peer ID -> Peer connection (They are either open, or the other end closed them)
 
@@ -36,17 +38,17 @@ var peerConnectionCache = {}; // Peer ID -> Peer connection (They are either ope
 // This info is used as the main handle for a resource
 function ResourceHandle(url, jsonMetadata){
 	this.url = url;
-	this.hash = "fakeMd5Hash";
+	this.hash = "fakeMd5Hash"; // TODO NICK Impliment
 	this.length = 122169;
 	this.contenttype = "image/png";
 	this.chunksize = 50000;
-	this.chunkhashes = [
+	this.chunkhashes = [ // TODO NICK Implement
 		"fakeMd5Hash",
 		"fakeMd5Hash",
 		"fakeMd5Hash"
 	];
 	this.chunkcount = this.chunkhashes.length;
-	this.recentPeers = [
+	this.recentPeers = [ // TODO NICK Implement
 		"fakePeerID",
 		"fakePeerID"
 	];
@@ -54,7 +56,7 @@ function ResourceHandle(url, jsonMetadata){
 	// Not required for basic function, but recommends tweaks to the clients algorytms for specific scenarios
 	// Required for special cases like inOrder download for video streaming.
 	this.tuning = {
-		inOrderStreaming: 'false'
+		inOrderStreaming: 'false' // TODO NICK Impliment
 	};
 
 	// Basic error checking
@@ -76,20 +78,11 @@ function getResourceHandle(url, callback){
 	var rsrcHandle = new ResourceHandle(url, "fake JSON From Server"); // TODO NICK actually fetch from server
 	logProtocolStep(2);
 	callback(rsrcHandle);
+	return;
 }
 
 function getCacheKey(rsrcHandle){
 	return rsrcHandle.url+":"+rsrcHandle.hash;
-}
-
-function completeDownload(rsrcHandle, completedChunks, callback){
-	console.log(completedChunks); // TODO Remove
-
-	logProtocolStep(6);
-	var blob = new Blob(completedChunks, {type: rsrcHandle.contenttype});
-
-	logProtocolStep(7);
-	callback(URL.createObjectURL(blob));
 }
 
 // Starts getting the URL by any means and calls back with a local resource URL pointing at the data.
@@ -108,23 +101,21 @@ function startDownload(rsrcHandle, callback){
 	//    to see if that increases throughput or decreases.
 	// TODO NICK Figure out a good system for Video priority and very well controlled 
 	//    fallback to HTTP when the buffer is nearly out
-	
+
 	var chunksLeft = rsrcHandle.chunkcount;
 	for(var i = 0; i < rsrcHandle.chunkcount; i++){
 		getChunk(rsrcHandle, i, function(chunkNumber, data){
 			completedChunks[chunkNumber] = data;
 			chunksLeft--;
 
-			// Could complete download from cache or from async calls to getChunk (Here)
-			if(chunksLeft === 0){
-				completeDownload(rsrcHandle, completedChunks, callback);
+			if(chunksLeft === 0){ // Download complete
+				logProtocolStep(6);
+				var blob = new Blob(completedChunks, {type: rsrcHandle.contenttype});
+				logProtocolStep(7);
+				callback(URL.createObjectURL(blob));
+				return;
 			}
 		});
-
-		// Could complete download from cache (Here) or from async calls to getChunk
-		if(chunksLeft === 0){
-			completeDownload(rsrcHandle, completedChunks, callback);
-		}
 	}
 }
 
@@ -134,13 +125,16 @@ function getChunk(rsrcHandle, chunkNumber, callback){
 		// TODO NICK Good stat
 		console.log("Fullfilled request from chunkCache. "+rsrcHandle.url + " chunk #"+chunkNumber);
 		callback(chunkNumber, chunkCache[cacheKey][chunkNumber]);
+		return;
 	}
 	
 	_getChunkP2P(rsrcHandle, chunkNumber, function(data){
 		if(data !== null){
 			callback(chunkNumber, data);
+			return;
 		} else {
 			_getChunkHTTP(rsrcHandle, chunkNumber, callback);
+			return;
 		}
 	});
 }
@@ -165,6 +159,7 @@ function _getChunkP2P(rsrcHandle, chunkNumber, callback){
 		}
 	}
 	callback(null);
+	return;
 }
 
 function _getChunkHTTP(rsrcHandle, chunkNumber, callback){
@@ -179,37 +174,31 @@ function _getChunkHTTP(rsrcHandle, chunkNumber, callback){
 		var data = xhr.response;
 		if(data.byteLength !== (end-start)){
 			if(data.byteLength == rsrcHandle.length){
-				// Server returned the full file instead of Range
-				console.log("Web Server returned the whole file rather than Range requested. Slicing.");
-				data = data.slice(start, end); // TODO NICK Probably could be solved more efficiently
+				// TODO NICK Good stat (Determine if Range is a viable fallback vs. just full HTTP)
+				console.log("Web Server returned full file instead of Range requested.")
+				data = data.slice(start, end);
 			} else {
-				// TODO NICK Look into Range header spec and see if this is easily fixed.
-				console.error("Web Server returned a different range than requested, but not whole file. Could not handle.")
+				// TODO NICK This happens in Chrome against Nginx so its important. Seems to have to do with gzip?
+				console.error("Web Server returned a different range than requested, but not whole file. Could not handle. Expected: "+(end-start)+" Got: "+data.byteLength+". Headers:\n\n"+xhr.getAllResponseHeaders())
 			}
 		}
 
-		// TODO NICK Figure out what to do if the server doesnt support Range header and returns the whole file!!!
 		callback(chunkNumber, data);
+		return;
 	}
 	xhr.send(null);
 }
 
+function initP2P(rsrcHandle){
+	// TODO NICK Add all the peers from the rsrcHandle to the peerConnectionCache and open data channels
+	// These will be used as soon as added to the cache because the chunk fetcher tries to use them!
+}
+
 function fetchResource(url, callback){
 	getResourceHandle(url, function(rsrcHandle){ // Protocol step 1 & 2
+		initP2P(rsrcHandle); // TODO NICK Implement
 		startDownload(rsrcHandle, function(localUrl){
 			callback(url, localUrl); // Protocol step 6
 		});
 	});
 }
-
-/*
-freedom.on('fetchResource', function(url){
-	getResourceHandle(url, function(rsrcHandle){ // Protocol step 1 & 2
-		startDownload(rsrcHandle, function(localUrl){
-			freedom.emit('resourceReady', {url: url, src: localUrl}); // Protocol step 6
-		});
-	});
-});
-
-freedom.emit('dcdnReady', '');
-*/
