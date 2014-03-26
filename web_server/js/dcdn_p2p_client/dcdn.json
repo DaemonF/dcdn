@@ -1,7 +1,0 @@
-{
-	"name": "Distributed CDN",
-	"description": "An open source P2P CDN based on Freedom by the UW Networks Lab",
-	"app": {
-		"script": "dcdn.js"
-	}
-}
