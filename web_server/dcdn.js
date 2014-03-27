@@ -25,6 +25,7 @@
 // This last step is slightly different for stream media and involves an inorder chunk algorythm and a URL to incomplete data once buffer has been established (TODO NICK figure this out)
 
 
+function DCDN(){
 // Defaults for parameters in 'tuning' section of server response
 var DEFAULT_RETRYS_BEFORE_HTTP_FALLBACK = 3; // overridden by rsrcHandle.tuning['try_limit']
 
@@ -70,6 +71,14 @@ function ResourceHandle(url, jsonMetadata){
 
 function logProtocolStep(stepNumber){
 	console.log("Protocol Step #"+stepNumber);
+}
+
+this.canonicalizeUrl = function(url){
+	var link = document.createElement('a'); // Helper <a> tag used for canonicalization
+	link.href = url;
+	url = link.protocol + "//" + link.host + link.pathname + link.search;
+	delete link;
+	return url;
 }
 
 // Gets the URL's metadata from the coo. server and calls back with a handle object for the URL
@@ -194,7 +203,7 @@ function initP2P(rsrcHandle){
 	// These will be used as soon as added to the cache because the chunk fetcher tries to use them!
 }
 
-function fetchResource(url, callback){
+this.fetchResource = function(url, callback){
 	getResourceHandle(url, function(rsrcHandle){ // Protocol step 1 & 2
 		initP2P(rsrcHandle); // TODO NICK Implement
 		startDownload(rsrcHandle, function(localUrl){
@@ -202,3 +211,6 @@ function fetchResource(url, callback){
 		});
 	});
 }
+}
+
+var dcdn = new DCDN();
