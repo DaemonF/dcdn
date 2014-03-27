@@ -40,14 +40,34 @@ var peerConnectionCache = {}; // Peer ID -> Peer connection (They are either ope
 function ResourceHandle(url, jsonMetadata){
 	this.url = url;
 	this.hash = "fakeMd5Hash"; // TODO NICK Impliment
-	this.length = 122169;
-	this.contenttype = "image/png";
-	this.chunksize = 50000;
-	this.chunkhashes = [ // TODO NICK Implement
-		"fakeMd5Hash",
-		"fakeMd5Hash",
-		"fakeMd5Hash"
-	];
+	
+	function endsWith(str, suffix) {
+        return str.indexOf(suffix, str.length - str.length) !== -1;
+    }
+
+	if(endsWith(url, "seattle.jpg")){
+		// seattle.jpg values
+		this.length = 3232686;
+		this.contenttype = "image/jpeg";
+		this.chunksize = 500000;
+		this.chunkhashes = [ // TODO NICK Implement
+			"fakeMd5Hash",
+			"fakeMd5Hash",
+			"fakeMd5Hash",
+			"fakeMd5Hash",
+			"fakeMd5Hash",
+			"fakeMd5Hash",
+			"fakeMd5Hash"
+		];
+	} else if (endsWith(url, "chrome.png")){
+		// chrome.png values
+		this.length = 122169;
+		this.contenttype = "image/png";
+		this.chunksize = 150000;
+		this.chunkhashes = [ // TODO NICK Implement
+			"fakeMd5Hash"
+		];
+	}	
 	this.chunkcount = this.chunkhashes.length;
 	this.recentPeers = [ // TODO NICK Implement
 		"fakePeerID",
@@ -103,6 +123,7 @@ function startDownload(rsrcHandle, callback){
 	}
 	var completedChunks = chunkCache[cacheKey];
 
+
 	// TODO NICK Refactor to dump everything into a priority waiting queue with 
 	//    priority based on a lambda (inOrder for video, by recommendation 
 	//    from server, etc)
@@ -110,25 +131,42 @@ function startDownload(rsrcHandle, callback){
 	//    to see if that increases throughput or decreases.
 	// TODO NICK Figure out a good system for Video priority and very well controlled 
 	//    fallback to HTTP when the buffer is nearly out
+	// TODO NICK Keep track of attempts up here and make getChunk try or fail
 
-	var chunksLeft = rsrcHandle.chunkcount;
+	var lastYielded = 0;
 	for(var i = 0; i < rsrcHandle.chunkcount; i++){
-		getChunk(rsrcHandle, i, function(chunkNumber, data){
+		getChunk(rsrcHandle, i, 0, function(chunkNumber, data){
 			completedChunks[chunkNumber] = data;
-			chunksLeft--;
 
-			if(chunksLeft === 0){ // Download complete
+			var inOrderDone = []
+			for(var i = 0; i < completedChunks.length; i++){
+				if(typeof completedChunks[i] !== 'undefined'){
+					inOrderDone.push(completedChunks[i]);
+				} else {
+					break;
+				}
+			}
+			if(inOrderDone.length > lastYielded){
+				lastYielded = inOrderDone.length;
+				logProtocolStep(6);
+				var blob = new Blob(inOrderDone, {type: rsrcHandle.contenttype});
+				logProtocolStep(7);
+				callback(URL.createObjectURL(blob));
+				return;
+			}
+
+			/*if(chunksLeft === 0){ // Download complete
 				logProtocolStep(6);
 				var blob = new Blob(completedChunks, {type: rsrcHandle.contenttype});
 				logProtocolStep(7);
 				callback(URL.createObjectURL(blob));
 				return;
-			}
+			}*/
 		});
 	}
 }
 
-function getChunk(rsrcHandle, chunkNumber, callback){
+function getChunk(rsrcHandle, chunkNumber, attempts, callback){
 	var cacheKey = getCacheKey(rsrcHandle);
 	if(typeof chunkCache[cacheKey][chunkNumber] !== 'undefined'){
 		// TODO NICK Good stat
@@ -136,38 +174,41 @@ function getChunk(rsrcHandle, chunkNumber, callback){
 		callback(chunkNumber, chunkCache[cacheKey][chunkNumber]);
 		return;
 	}
+
+	var try_limit = DEFAULT_RETRYS_BEFORE_HTTP_FALLBACK;
+	if(typeof rsrcHandle.tuning['try_limit'] !== 'undefined'){
+		try_limit = rsrcHandle.tuning['try_limit']; // TODO NICK Validate is a number or log error
+	}
 	
-	_getChunkP2P(rsrcHandle, chunkNumber, function(data){
+	console.log("Attempt: "+attempts);
+	if(attempts >= try_limit){
+		_getChunkHTTP(rsrcHandle, chunkNumber, callback);
+		return;
+	}
+
+	_getChunkP2P(rsrcHandle, chunkNumber, function(chunkNumber, data){
 		if(data !== null){
 			callback(chunkNumber, data);
 			return;
 		} else {
-			_getChunkHTTP(rsrcHandle, chunkNumber, callback);
+			console.log("Failed to get "+rsrcHandle.url+" chunk #"+chunkNumber+" via P2P (Try #"+(attempts+1)+").");
+			getChunk(rsrcHandle, chunkNumber, attempts + 1, callback);
 			return;
 		}
 	});
 }
 
 function _getChunkP2P(rsrcHandle, chunkNumber, callback){
-	var try_limit = DEFAULT_RETRYS_BEFORE_HTTP_FALLBACK;
-	if(typeof rsrcHandle.tuning['try_limit'] !== 'undefined'){
-		try_limit = rsrcHandle.tuning['try_limit']; // TODO NICK Validate is a number or log error
+	var data = null;
+
+	// TODO NICK impliment
+
+	// If this is the last chunk, truncate to the appropriate length based on chunksize and content length
+	if(data !== null && rsrcHandle.chunkcount == chunkNumber){
+		data = data.slice(0, rsrcHandle.length % rsrcHandle.chunksize);
 	}
 
-	// Try try_limit times to find a peer with the data and download it.
-	for(var i = 0; i < try_limit; i++){
-		var data = null; // TODO NICK impliment
-
-		if(data !== null){
-			// TODO NICK If this is the last chunk, truncate to the appropriate length based on chunksize and content length
-			callback(chunkNumber, data);
-			return;
-		} else {
-			// TODO NICK Good stat
-			console.log("Failed to get "+rsrcHandle.url+" chunk #"+chunkNumber+" via P2P (Try #"+i+").");
-		}
-	}
-	callback(null);
+	callback(chunkNumber, data);
 	return;
 }
 
@@ -185,6 +226,7 @@ function _getChunkHTTP(rsrcHandle, chunkNumber, callback){
 			if(data.byteLength == rsrcHandle.length){
 				// TODO NICK Good stat (Determine if Range is a viable fallback vs. just full HTTP)
 				console.log("Web Server returned full file instead of Range requested.")
+				// TODO NICK Consider filling in all the cache in this case? Might be worthwhile
 				data = data.slice(start, end);
 			} else {
 				// TODO NICK This happens in Chrome against Nginx so its important. Seems to have to do with gzip?
