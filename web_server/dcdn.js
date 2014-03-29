@@ -24,61 +24,19 @@
 // 7) An event is ommited with a local URL to the data
 // This last step is slightly different for stream media and involves an inorder chunk algorythm and a URL to incomplete data once buffer has been established (TODO NICK figure this out)
 
+//TODO NICK Remove need for these static defines
+COORD_SERVER_URL="ws://localhost:8080/";
 
-function DCDN(){
-// Defaults for parameters in 'tuning' section of server response
-var DEFAULT_RETRYS_BEFORE_HTTP_FALLBACK = 3; // overridden by rsrcHandle.tuning['try_limit']
-
-
-// TODO NICK These two items being persistant would make this system SOOOO much more efficient
-var chunkCache = {}; // getCacheKey(rsrcHandle) -> list of ArrayBuffers where each is a complete, validated chunk
-var peerConnectionCache = {}; // Peer ID -> Peer connection (They are either open, or the other end closed them)
-
-
-// Object to represent that static data about a particular URL returned by the Coordination server (jsonMetadata)
-// This info is used as the main handle for a resource
-function ResourceHandle(url, jsonMetadata){
+function ResourceHandle(url, metadata){
 	this.url = url;
-	this.hash = "fakeMd5Hash"; // TODO NICK Impliment
-	
-	function endsWith(str, suffix) {
-        return str.indexOf(suffix, str.length - str.length) !== -1;
-    }
-
-	if(endsWith(url, "seattle.jpg")){
-		// seattle.jpg values
-		this.length = 3232686;
-		this.contenttype = "image/jpeg";
-		this.chunksize = 500000;
-		this.chunkhashes = [ // TODO NICK Implement
-			"fakeMd5Hash",
-			"fakeMd5Hash",
-			"fakeMd5Hash",
-			"fakeMd5Hash",
-			"fakeMd5Hash",
-			"fakeMd5Hash",
-			"fakeMd5Hash"
-		];
-	} else if (endsWith(url, "chrome.png")){
-		// chrome.png values
-		this.length = 122169;
-		this.contenttype = "image/png";
-		this.chunksize = 150000;
-		this.chunkhashes = [ // TODO NICK Implement
-			"fakeMd5Hash"
-		];
-	}	
+	console.log(metadata)
+	this.hash = metadata.hash; // TODO NICK Impliment hash checking
+	this.length = metadata.length;
+	this.contenttype = metadata.contenttype;
+	this.chunksize = metadata.chunksize;
+	this.chunkhashes = metadata.chunkhashes;
 	this.chunkcount = this.chunkhashes.length;
-	this.recentPeers = [ // TODO NICK Implement
-		"fakePeerID",
-		"fakePeerID"
-	];
-
-	// Not required for basic function, but recommends tweaks to the clients algorytms for specific scenarios
-	// Required for special cases like inOrder download for video streaming.
-	this.tuning = {
-		inOrderStreaming: 'false' // TODO NICK Impliment
-	};
+	this.peers = metadata.peers;
 
 	// Basic error checking
 	if((this.chunkcount * this.chunksize) < this.length){
@@ -89,170 +47,204 @@ function ResourceHandle(url, jsonMetadata){
 	}
 }
 
-function logProtocolStep(stepNumber){
-	console.log("Protocol Step #"+stepNumber);
-}
+function CoordServ(){
+	var socket = new WebSocket(COORD_SERVER_URL);
+	var messageIdToCallback = {};
+	var queue = []
+	var lastId = 0;
 
-this.canonicalizeUrl = function(url){
-	var link = document.createElement('a'); // Helper <a> tag used for canonicalization
-	link.href = url;
-	url = link.protocol + "//" + link.host + link.pathname + link.search;
-	delete link;
-	return url;
-}
-
-// Gets the URL's metadata from the coo. server and calls back with a handle object for the URL
-function getResourceHandle(url, callback){
-	logProtocolStep(1);
-	var rsrcHandle = new ResourceHandle(url, "fake JSON From Server"); // TODO NICK actually fetch from server
-	logProtocolStep(2);
-	callback(rsrcHandle);
-	return;
-}
-
-function getCacheKey(rsrcHandle){
-	return rsrcHandle.url+":"+rsrcHandle.hash;
-}
-
-// Starts getting the URL by any means and calls back with a local resource URL pointing at the data.
-function startDownload(rsrcHandle, callback){
-	// Make a pointer to this file's spot in the global chunk cache
-	var cacheKey = getCacheKey(rsrcHandle);
-	if(typeof chunkCache[cacheKey] === 'undefined'){
-		chunkCache[cacheKey] = [];
+	function send(msg, callback){
+		if(socket.readyState != 1){
+			queue.push(msg)
+			queue.push(callback);
+		} else {
+			lastId++;
+			var id = lastId;
+			msg['id'] = id;
+			messageIdToCallback[id] = callback;
+			socket.send(JSON.stringify(msg));
+		}
 	}
-	var completedChunks = chunkCache[cacheKey];
+
+	socket.onmessage = function(msgEvent){
+		var msg = JSON.parse(msgEvent.data);
+		var id = msg['replyTo'];
+		messageIdToCallback[id](msg);
+		delete messageIdToCallback[id];
+	};
+
+	socket.onopen = function(){
+		for(var i = 0; i < queue.length; i += 2){
+			send(queue[i], queue[i+1]);
+		}
+		delete queue;
+	};
+
+	this.sendMessage = send;
+}
+
+function DCDN(){
+	// Defaults for parameters in 'tuning' section of server response
+	var DEFAULT_RETRYS_BEFORE_HTTP_FALLBACK = 3; // overridden by rsrcHandle.tuning['try_limit']
 
 
-	// TODO NICK Refactor to dump everything into a priority waiting queue with 
-	//    priority based on a lambda (inOrder for video, by recommendation 
-	//    from server, etc)
-	// TODO NICK Refactor to have an active queue (10 maybe?) and a waiting queue
-	//    to see if that increases throughput or decreases.
-	// TODO NICK Figure out a good system for Video priority and very well controlled 
-	//    fallback to HTTP when the buffer is nearly out
-	// TODO NICK Keep track of attempts up here and make getChunk try or fail
+	// TODO NICK These two items being persistant would make this system SOOOO much more efficient
+	var chunkCache = {}; // getCacheKey(rsrcHandle) -> list of ArrayBuffers where each is a complete, validated chunk
+	var coordServ = new CoordServ();
+	var peerConnectionCache = {}; // Peer ID -> Peer connection (They are either open, or the other end closed them)
 
-	var lastYielded = 0;
-	for(var i = 0; i < rsrcHandle.chunkcount; i++){
-		getChunk(rsrcHandle, i, 0, function(chunkNumber, data){
-			completedChunks[chunkNumber] = data;
+	// Object to represent that static data about a particular URL returned by the Coordination server (jsonMetadata)
+	// This info is used as the main handle for a resource
+	
 
-			var inOrderDone = []
-			for(var i = 0; i < completedChunks.length; i++){
-				if(typeof completedChunks[i] !== 'undefined'){
-					inOrderDone.push(completedChunks[i]);
+	function logProtocolStep(stepNumber){
+		console.log("Protocol Step #"+stepNumber);
+	}
+
+	this.canonicalizeUrl = function(url){
+		var link = document.createElement('a'); // Helper <a> tag used for canonicalization
+		link.href = url;
+		url = link.protocol + "//" + link.host + link.pathname + link.search;
+		delete link;
+		return url;
+	}
+
+	// Gets the URL's metadata from the coo. server and calls back with a handle object for the URL
+	function getResourceHandle(url, callback){
+		logProtocolStep(1);
+		coordServ.sendMessage({"url":url, "action":"getMetadata"}, function(response){
+			var rsrcHandle = new ResourceHandle(url, response['metadata']);
+			logProtocolStep(2);
+			callback(rsrcHandle); return;
+		});
+	}
+
+	function getCacheKey(rsrcHandle){
+		return rsrcHandle.url+":"+rsrcHandle.hash;
+	}
+
+	// Starts getting the URL by any means and calls back with a local resource URL pointing at the data.
+	function startDownload(rsrcHandle, callback){
+		// Make a pointer to this file's spot in the global chunk cache
+		var cacheKey = getCacheKey(rsrcHandle);
+		if(typeof chunkCache[cacheKey] === 'undefined'){
+			chunkCache[cacheKey] = [];
+		}
+		var completedChunks = chunkCache[cacheKey];
+
+
+		// TODO NICK Refactor to dump everything into a priority waiting queue with 
+		//    priority based on a lambda (inOrder for video, by recommendation 
+		//    from server, etc)
+		// TODO NICK Refactor to have an active queue (10 maybe?) and a waiting queue
+		//    to see if that increases throughput or decreases.
+		// TODO NICK Figure out a good system for Video priority and very well controlled 
+		//    fallback to HTTP when the buffer is nearly out
+		// TODO NICK Keep track of attempts up here and make getChunk try or fail
+
+		var lastYielded = 0;
+		for(var i = 0; i < rsrcHandle.chunkcount; i++){
+			getChunk(rsrcHandle, i, 0, function(chunkNumber, data){
+				completedChunks[chunkNumber] = data;
+
+				var inOrderDone = []
+				for(var i = 0; i < completedChunks.length; i++){
+					if(typeof completedChunks[i] !== 'undefined'){
+						inOrderDone.push(completedChunks[i]);
+					} else {
+						break;
+					}
+				}
+
+				if(inOrderDone.length > lastYielded){
+					lastYielded = inOrderDone.length;
+					logProtocolStep(6);
+					var blob = new Blob(inOrderDone, {type: rsrcHandle.contenttype});
+					logProtocolStep(7);
+					callback(URL.createObjectURL(blob)); return;
+				}
+			});
+		}
+	}
+
+	function getChunk(rsrcHandle, chunkNumber, attempts, callback){
+		var cacheKey = getCacheKey(rsrcHandle);
+		if(typeof chunkCache[cacheKey][chunkNumber] !== 'undefined'){
+			// TODO NICK Good stat
+			console.log("Fullfilled request from chunkCache. "+rsrcHandle.url + " chunk #"+chunkNumber);
+			callback(chunkNumber, chunkCache[cacheKey][chunkNumber]); return;
+		}
+
+		var try_limit = DEFAULT_RETRYS_BEFORE_HTTP_FALLBACK; // TODO NICK Decide if this should stay
+		
+		console.log("Attempt: "+attempts);
+		if(attempts >= try_limit){
+			_getChunkHTTP(rsrcHandle, chunkNumber, callback); return;
+		}
+
+		_getChunkP2P(rsrcHandle, chunkNumber, function(chunkNumber, data){
+			if(data !== null){
+				callback(chunkNumber, data); return;
+			} else {
+				console.log("Failed to get "+rsrcHandle.url+" chunk #"+chunkNumber+" via P2P (Try #"+(attempts+1)+").");
+				getChunk(rsrcHandle, chunkNumber, attempts + 1, callback); return;
+			}
+		});
+	}
+
+	function _getChunkP2P(rsrcHandle, chunkNumber, callback){
+		var data = null;
+
+		// TODO NICK impliment
+
+		// If this is the last chunk, truncate to the appropriate length based on chunksize and content length
+		if(data !== null && rsrcHandle.chunkcount == chunkNumber){
+			data = data.slice(0, rsrcHandle.length % rsrcHandle.chunksize);
+		}
+
+		callback(chunkNumber, data); return;
+	}
+
+	function _getChunkHTTP(rsrcHandle, chunkNumber, callback){
+		var start = rsrcHandle.chunksize * chunkNumber;
+		var end = Math.min(start + rsrcHandle.chunksize, rsrcHandle.length);
+
+		var xhr = new XMLHttpRequest();
+		xhr.open('GET', url, true);
+		xhr.responseType = "arraybuffer";
+		xhr.setRequestHeader('Range', 'bytes='+start+'-'+end); // Range header
+		xhr.onload = function() {
+			var data = xhr.response;
+			if(data.byteLength !== (end-start)){
+				if(data.byteLength == rsrcHandle.length){
+					// TODO NICK Good stat (Determine if Range is a viable fallback vs. just full HTTP)
+					console.log("Web Server returned full file instead of Range requested.")
+					// TODO NICK Consider filling in all the cache in this case? Might be worthwhile
+					data = data.slice(start, end);
 				} else {
-					break;
+					// TODO NICK This happens in Chrome against Nginx so its important. Seems to have to do with gzip?
+					console.error("Web Server returned a different range than requested, but not whole file. Could not handle. Expected: "+(end-start)+" Got: "+data.byteLength+". Headers:\n\n"+xhr.getAllResponseHeaders())
 				}
 			}
-			if(inOrderDone.length > lastYielded){
-				lastYielded = inOrderDone.length;
-				logProtocolStep(6);
-				var blob = new Blob(inOrderDone, {type: rsrcHandle.contenttype});
-				logProtocolStep(7);
-				callback(URL.createObjectURL(blob));
-				return;
-			}
 
-			/*if(chunksLeft === 0){ // Download complete
-				logProtocolStep(6);
-				var blob = new Blob(completedChunks, {type: rsrcHandle.contenttype});
-				logProtocolStep(7);
-				callback(URL.createObjectURL(blob));
-				return;
-			}*/
+			callback(chunkNumber, data); return;
+		}
+		xhr.send(null);
+	}
+
+	function initP2P(rsrcHandle){
+		// TODO NICK Add all the peers from the rsrcHandle to the peerConnectionCache and open data channels
+		// These will be used as soon as added to the cache because the chunk fetcher tries to use them!
+	}
+
+	this.fetchResource = function(url, callback){
+		getResourceHandle(url, function(rsrcHandle){ // Protocol step 1 & 2
+			initP2P(rsrcHandle); // TODO NICK Implement
+			startDownload(rsrcHandle, function(localUrl){
+				callback(url, localUrl); // Protocol step 6
+			});
 		});
 	}
-}
-
-function getChunk(rsrcHandle, chunkNumber, attempts, callback){
-	var cacheKey = getCacheKey(rsrcHandle);
-	if(typeof chunkCache[cacheKey][chunkNumber] !== 'undefined'){
-		// TODO NICK Good stat
-		console.log("Fullfilled request from chunkCache. "+rsrcHandle.url + " chunk #"+chunkNumber);
-		callback(chunkNumber, chunkCache[cacheKey][chunkNumber]);
-		return;
-	}
-
-	var try_limit = DEFAULT_RETRYS_BEFORE_HTTP_FALLBACK;
-	if(typeof rsrcHandle.tuning['try_limit'] !== 'undefined'){
-		try_limit = rsrcHandle.tuning['try_limit']; // TODO NICK Validate is a number or log error
-	}
-	
-	console.log("Attempt: "+attempts);
-	if(attempts >= try_limit){
-		_getChunkHTTP(rsrcHandle, chunkNumber, callback);
-		return;
-	}
-
-	_getChunkP2P(rsrcHandle, chunkNumber, function(chunkNumber, data){
-		if(data !== null){
-			callback(chunkNumber, data);
-			return;
-		} else {
-			console.log("Failed to get "+rsrcHandle.url+" chunk #"+chunkNumber+" via P2P (Try #"+(attempts+1)+").");
-			getChunk(rsrcHandle, chunkNumber, attempts + 1, callback);
-			return;
-		}
-	});
-}
-
-function _getChunkP2P(rsrcHandle, chunkNumber, callback){
-	var data = null;
-
-	// TODO NICK impliment
-
-	// If this is the last chunk, truncate to the appropriate length based on chunksize and content length
-	if(data !== null && rsrcHandle.chunkcount == chunkNumber){
-		data = data.slice(0, rsrcHandle.length % rsrcHandle.chunksize);
-	}
-
-	callback(chunkNumber, data);
-	return;
-}
-
-function _getChunkHTTP(rsrcHandle, chunkNumber, callback){
-	var start = rsrcHandle.chunksize * chunkNumber;
-	var end = Math.min(start + rsrcHandle.chunksize, rsrcHandle.length);
-
-	var xhr = new XMLHttpRequest();
-	xhr.open('GET', url, true);
-	xhr.responseType = "arraybuffer";
-	xhr.setRequestHeader('Range', 'bytes='+start+'-'+end); // Range header
-	xhr.onload = function() {
-		var data = xhr.response;
-		if(data.byteLength !== (end-start)){
-			if(data.byteLength == rsrcHandle.length){
-				// TODO NICK Good stat (Determine if Range is a viable fallback vs. just full HTTP)
-				console.log("Web Server returned full file instead of Range requested.")
-				// TODO NICK Consider filling in all the cache in this case? Might be worthwhile
-				data = data.slice(start, end);
-			} else {
-				// TODO NICK This happens in Chrome against Nginx so its important. Seems to have to do with gzip?
-				console.error("Web Server returned a different range than requested, but not whole file. Could not handle. Expected: "+(end-start)+" Got: "+data.byteLength+". Headers:\n\n"+xhr.getAllResponseHeaders())
-			}
-		}
-
-		callback(chunkNumber, data);
-		return;
-	}
-	xhr.send(null);
-}
-
-function initP2P(rsrcHandle){
-	// TODO NICK Add all the peers from the rsrcHandle to the peerConnectionCache and open data channels
-	// These will be used as soon as added to the cache because the chunk fetcher tries to use them!
-}
-
-this.fetchResource = function(url, callback){
-	getResourceHandle(url, function(rsrcHandle){ // Protocol step 1 & 2
-		initP2P(rsrcHandle); // TODO NICK Implement
-		startDownload(rsrcHandle, function(localUrl){
-			callback(url, localUrl); // Protocol step 6
-		});
-	});
-}
 }
 
 var dcdn = new DCDN();
