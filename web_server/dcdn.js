@@ -25,7 +25,7 @@
 // This last step is slightly different for stream media and involves an inorder chunk algorythm and a URL to incomplete data once buffer has been established (TODO NICK figure this out)
 
 //TODO NICK Remove need for these static defines
-COORD_SERVER_URL="ws://localhost:8080/";
+COORD_SERVER_URL="ws://localhost:8081/";
 
 function ResourceHandle(url, metadata){
 	this.url = url;
