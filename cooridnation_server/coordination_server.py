@@ -56,19 +56,16 @@ seattleSkylineMeta = {
 
 
 @asyncio.coroutine
-def hello(websocket, uri):
+def dcdn(websocket, uri):
 	global lastId
 	message = yield from websocket.recv()
 	print("< {}".format(message))
 
 	# Basic response format
 	msg = json.loads(message)
-	msgId = msg['id']
-	lastId += 1
-	respId = lastId
+	channel = msg['channel']
 	resp = {
-		"id": respId,
-		"replyTo": msgId,
+		"channel": channel
 	}
 
 	if msg['action'] == "getMetadata": # TODO NICK factor out various actions into functions
@@ -87,7 +84,7 @@ def hello(websocket, uri):
 	print("> {}".format(response))
 	yield from websocket.send(response)
 
-start_server = websockets.serve(hello, 'localhost', 8081)
+start_server = websockets.serve(dcdn, 'localhost', 8081)
 print("Running...")
 
 asyncio.get_event_loop().run_until_complete(start_server)
