@@ -16,6 +16,8 @@ A Distributed CDN based on modern web technologies
 
 ## Running the Examples ##
 1. Clone this repo
-2. In one terminal `cd web_server` then `python3 -m http.server 8080`
-3. In another `cd coordination_server` then `python3 coordination_server.py`
-4. Navigate to http://localhost:8080/examples/ in your browser
+2. run `node install`
+3. run `make`
+4. In one terminal `node webserver.js`
+5. In another `python3 dcdn-coord-serv.py`
+6. Navigate to http://localhost:8080/examples/ in your browser
