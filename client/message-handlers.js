@@ -36,7 +36,6 @@ var messageHandlers = {
 
 			if(i == resourceHandles[message.url].meta.chunkcount - 1){
 				// Done with download
-				console.log(chunks)
 				var blob = new Blob(chunks, {type: resourceHandles[message.url].meta.contenttype});
 				resourceHandles[message.url].callback(URL.createObjectURL(blob));
 			}

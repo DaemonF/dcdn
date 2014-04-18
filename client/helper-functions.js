@@ -1,3 +1,7 @@
+function checkBrowserCompatibility(){
+	return ('WebSocket' in window);
+}
+
 function sendMessage(obj, connection){
 	console.log("<<< [%s]", obj.type);
 	connection.send(BSON.serialize(obj));
@@ -23,6 +27,14 @@ function onMessage(msgEvent){
 	}
 
 	messageHandlers[message.type](message);
+}
+
+function onError(){
+	console.error('Fatal error. Throwing back to normal download.');
+	fatalError = true;
+	for(var url in resourceHandles){
+		resourceHandles[url].callback(url);
+	}
 }
 
 function localDescCreated(peerId, msgChannel, desc){
