@@ -19,11 +19,12 @@ messageHandlers = {
 					var chunk = message.chunks[i];
 					var start = chunk * metadata.chunksize;
 					var end = Math.min(start + metadata.chunksize, metadata.length);
+
 					var reply = {
 						"type": 'chunk',
 						"url": message.url,
 						"chunk": chunk,
-						"data": file.toString('base64')
+						"data": file.slice(start, end)
 					}
 
 					console.log('>>> [%s] chunk: %s for %s', reply.type, reply.chunk, reply.url);

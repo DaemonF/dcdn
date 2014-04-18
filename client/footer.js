@@ -14,5 +14,8 @@
 		requestMetadata(url, coordinationServer);
 	}
 
-	coordinationServer = new QueuedConnection(new WebSocket(COORD_SERVER_URL), onMessage);
+	coordinationServer = new WebSocket(COORD_SERVER_URL);
+	coordinationServer.onmessage = onMessage;
+	coordinationServer.binaryType = 'arraybuffer';
+	coordinationServer = new QueuedConnection(coordinationServer);
 }

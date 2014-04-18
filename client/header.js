@@ -10,6 +10,8 @@
 
 // The clients must be using browsers with WebRTC, otherwise the system will fallback to normal HTTP download
 
+var BSON = bson().BSON;
+
 function DCDN(){
 	COORD_SERVER_URL="ws://localhost:8081/"; //TODO NICK Remove need for static define
 	CONCURRENT_CHUNK_LIMIT=10; // How many chunks can be downloaded at once by DCDN.

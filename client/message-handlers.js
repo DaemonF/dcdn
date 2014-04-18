@@ -11,7 +11,7 @@ var messageHandlers = {
 		for(var i = 0; i < meta.chunkcount; i++){
 			chunks.push(i);
 		}
-		onMessage({"data": JSON.stringify({
+		onMessage({"data": BSON.serialize({
 				"type": 'chunkfail',
 				"chunks": chunks,
 				"url": message.url,
@@ -25,7 +25,7 @@ var messageHandlers = {
 		// Stores chunk, checks if done, calls callback if so
 		// Requests the next chunk in the chunk queue
 
-		resourceHandles[message.url].chunks[message.chunk] = base64ToArrayBuffer(message.data);
+		resourceHandles[message.url].chunks[message.chunk] = message.data.buffer;
 
 		var chunks = resourceHandles[message.url].chunks
 		
@@ -36,6 +36,7 @@ var messageHandlers = {
 
 			if(i == resourceHandles[message.url].meta.chunkcount - 1){
 				// Done with download
+				console.log(chunks)
 				var blob = new Blob(chunks, {type: resourceHandles[message.url].meta.contenttype});
 				resourceHandles[message.url].callback(URL.createObjectURL(blob));
 			}

@@ -1,11 +1,11 @@
 function sendMessage(obj, connection){
-	console.log(">>> [%s]", obj.type);
-	connection.send(JSON.stringify(obj));
+	console.log("<<< [%s]", obj.type);
+	connection.send(BSON.serialize(obj));
 }
 
 function onMessage(msgEvent){
-	var message = JSON.parse(msgEvent.data);
-	console.log("<<< [%s]", message.type);
+	var message = BSON.deserialize(new Uint8Array(msgEvent.data));
+	console.log(">>> [%s]", message.type);
 
 	if(! ('type' in message) ){
 		console.error('Got message with no type: %o', message);
@@ -23,16 +23,6 @@ function onMessage(msgEvent){
 	}
 
 	messageHandlers[message.type](message);
-}
-
-function base64ToArrayBuffer(base64) {
-	var binary_string =  window.atob(base64);
-	var len = binary_string.length;
-	var bytes = new Uint8Array( len );
-	for (var i = 0; i < len; i++)        {
-		bytes[i] = binary_string.charCodeAt(i);
-	}
-	return bytes.buffer;
 }
 
 function localDescCreated(peerId, msgChannel, desc){
