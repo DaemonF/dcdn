@@ -3,6 +3,11 @@
 	"version": "0.1.0",
 	"description": "Development setup for building DCDN. A P2P CDN that requires no user intervention.",
 	"dependencies": {
-		"connect": ""
+		"ws": "",
+		"request": ""
+	},
+	"devDependencies": {
+		"connect": "",
+		"uglify-js": ""
 	}
 }
