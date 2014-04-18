@@ -4,7 +4,7 @@
 	"description": "Development setup for building DCDN. A P2P CDN that requires no user intervention.",
 	"dependencies": {
 		"ws": "",
-		"request": "",
+		"bson": "",
 		"connect": "",
 		"uglify-js": "",
 		"jslint": ""

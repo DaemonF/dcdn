@@ -1,6 +1,6 @@
-function QueuedConnection(connection, onmessage){
+function QueuedConnection(connection){
 	var conn = connection;
-	conn.onmessage = onmessage;
+	var onopen = conn.onopen;
 	var q = [];
 
 	this.send = function(message){
@@ -16,5 +16,8 @@ function QueuedConnection(connection, onmessage){
 			conn.send(q[i]);
 		}
 		q = null;
+
+		if(onopen !== null)
+			onopen.call(arguments);
 	}
 }
