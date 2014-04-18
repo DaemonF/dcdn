@@ -1,2 +1,3 @@
 node_modules/
-dcdn-*
+dcdn.js
+server.js
