@@ -4,10 +4,13 @@
 	"description": "Development setup for building DCDN. A P2P CDN that requires no user intervention.",
 	"dependencies": {
 		"ws": "",
-		"request": ""
-	},
-	"devDependencies": {
+		"request": "",
 		"connect": "",
-		"uglify-js": ""
+		"uglify-js": "",
+		"jslint": ""
+	},
+	"repository": {
+		"type" : "git",
+		"url" : "https://github.com/DaemonF/dcdn.git"
 	}
 }

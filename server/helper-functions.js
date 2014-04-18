@@ -1,3 +1,7 @@
+function sendMessage(message, connection){
+	connection.send(JSON.stringify(message));
+}
+
 var http = require('http');
 var urlparse = require('url').parse;
 var fileCache = {};

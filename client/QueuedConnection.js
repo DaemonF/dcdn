@@ -3,18 +3,16 @@ function QueuedConnection(connection, onmessage){
 	conn.onmessage = onmessage;
 	var q = [];
 
-	this.send = function(msg){
+	this.send = function(message){
 		if(q !== null){
-			q.push(msg);
+			q.push(message);
 		} else {
-			console.log("Sent immediately")
-			conn.send(msg);
+			conn.send(message);
 		}
 	}
 
 	conn.onopen = function(){
 		for(var i = 0; i < q.length; i++){
-			console.log("Sent from q")
 			conn.send(q[i]);
 		}
 		q = null;
