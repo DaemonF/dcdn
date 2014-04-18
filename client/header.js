@@ -16,6 +16,7 @@ function DCDN(){
 	COORD_SERVER_URL="ws://localhost:8081/"; //TODO NICK Remove need for static define
 	CONCURRENT_CHUNK_LIMIT=10; // How many chunks can be downloaded at once by DCDN.
 
+	var fatalError = false;
 	var coordinationServer = null;
 	var peerConnections = {};
 	var resourceHandles = {}; // URL to RsrcHandle
