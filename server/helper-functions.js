@@ -1,6 +1,39 @@
+function buffer2str(src) {
+	return String.fromCharCode.apply(null, src);
+}
 
-function sendMessage(message, connection){
-	connection.send(BSON.serialize(message));
+function str2buffer(str, dest) {
+	if(dest.length != str.length){
+		return console.error("dest is not the right size for the given string.");
+	}
+	for(var i=0; i < str.length; i++) {
+		var charCode = str.charCodeAt(i);
+		if(charCode > 255){
+			console.error("Non-ASCII character in string '%s'. Cannot convert to byte.", str[i]);
+		}
+		dest[i] = charCode;
+	}
+}
+
+function sendMessage(header, connection, binary){
+	if(typeof binary === 'undefined' || binary === null){
+		binary = new Buffer(0);
+	}
+
+	var headerString = JSON.stringify(header);
+	var headerStringOffset = 2;
+	var binaryOffset = headerStringOffset + headerString.length;
+	var buf = new Buffer(binaryOffset + binary.length);
+
+	// Write the header
+	buf.writeUInt16LE(headerString.length, 0);
+	var headerBuf = buf.slice(headerStringOffset, headerStringOffset + headerString.length);
+	str2buffer(headerString, headerBuf);
+
+	// Write the binary
+	binary.copy(buf, binaryOffset);
+
+	connection.send(buf);
 }
 
 function loadFile(url, callback){

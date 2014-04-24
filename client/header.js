@@ -10,10 +10,29 @@
 
 // The clients must be using browsers with WebRTC, otherwise the system will fallback to normal HTTP download
 
-var BSON = bson().BSON;
+if (typeof RTCPeerConnection === "undefined") {
+	if (typeof webkitRTCPeerConnection !== "undefined") {
+		RTCPeerConnection = webkitRTCPeerConnection;
+	} else if (typeof mozRTCPeerConnection !== "undefined") {
+		RTCPeerConnection = mozRTCPeerConnection;
+	} else {
+		console.error("No support for RTCPeerConnection.");
+	}
+}
 
 function DCDN(){
 	COORD_SERVER_URL="ws://localhost:8081/"; //TODO NICK Remove need for static define
+	var STUN_CONFIG = {
+		'iceServers': [{
+			'url': 'stun:stun.l.google.com:19302'
+		}]
+	};
+
+	var RTC_DATA_CHAN_CONFIG = {
+		ordered: false,
+		maxRetransmitTime: 3000, // in milliseconds
+	}
+
 	CONCURRENT_CHUNK_LIMIT=10; // How many chunks can be downloaded at once by DCDN.
 
 	var fatalError = false;

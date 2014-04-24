@@ -1,7 +1,7 @@
 FILES = dcdn.js server.js
 UGLIFY_CMD = node_modules/uglify-js/bin/uglifyjs
 
-CLIENT_COMPONENTS = node_modules/bson/browser_build/bson.js client/header.js client/QueuedConnection.js client/helper-functions.js client/message-handlers.js client/footer.js
+CLIENT_COMPONENTS = client/header.js client/QueuedConnection.js client/helper-functions.js client/message-handlers.js client/footer.js
 SERVER_COMPONENTS = server/helper-functions.js server/message-handlers.js server/main.js
 
 all : $(FILES)
@@ -15,10 +15,9 @@ server.js : $(SERVER_COMPONENTS)
 %.min.js : %.js
 	node_modules/uglify-js/bin/uglifyjs $< > $@
 
-webserver : dcdn.js webserver.js
-	node webserver.js
-
-server : server.js
+demo : dcdn.js server.js webserver.js
+	# Demos available at: http://localhost:8080/examples/
+	node webserver.js &
 	node server.js
 
 clean :
