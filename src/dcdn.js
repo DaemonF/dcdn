@@ -149,9 +149,16 @@ window.DCDN = (function(){
 	}
 
 	function onFatalError(){
-		console.error("Fatal error. Throwing back to normal download.");
 		fatalError = true;
 		for(var url in resourceHandles){
+			var handle = resourceHandles[url];
+			if(typeof handle.meta !== 'undefined'){
+				if(handle.lastYeilded === handle.meta.chunkcount){
+					// Dont bother failing back for URLs already completed
+					continue;
+				}
+			}
+			console.error("DCDN fatal error. Throwing back to normal download for: ", url);
 			resourceHandles[url].callback(url);
 		}
 	}
