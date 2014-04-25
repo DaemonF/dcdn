@@ -1,4 +1,3 @@
-/* jshint -W057 */
 /* global window, document, console, URL, Blob, ArrayBuffer, Uint8Array, 
 	Uint16Array, WebSocket, RTCPeerConnection, RTCSessionDescription, 
 	RTCIceCandidate
@@ -19,17 +18,7 @@
 */
 
 
-/*if (RTCPeerConnection === "undefined") {
-	if (window.webkitRTCPeerConnection !== "undefined") {
-		window.RTCPeerConnection = window.webkitRTCPeerConnection;
-	} else if (window.mozRTCPeerConnection !== "undefined") {
-		window.RTCPeerConnection = window.mozRTCPeerConnection;
-	} else {
-		console.error("No support for RTCPeerConnection.");
-	}
-}*/
-
-window.DCDN = new (function(){
+window.DCDN = (function(){
 	"use strict";
 
 
@@ -46,13 +35,14 @@ window.DCDN = new (function(){
 		maxRetransmitTime: 3000, // in milliseconds
 	};
 
-	// TODO persist this in a shared worker?
 	var fatalError = false;
+	var link = document.createElement("a"); // <a> element used for URL normalization
+
+	// TODO persist this in a shared worker?
 	var coordinationServer = null; // A websocket connection to the coordination server
 	var peerConnections = {}; // A hash of peerId -> WebRTCPeerConnection for each peer
 	var resourceHandles = {}; // A hash of URL to various info about the download or cached file
 
-	var link = document.createElement("a"); // <a> element used for URL normalization
 
 	polyfill("RTCPeerConnection");
 
@@ -307,6 +297,7 @@ window.DCDN = new (function(){
 		handle.chunks = [];
 		handle.lastYeilded = 0; // Keep track of how many chunks we have yeilded to the client
 		handle.chunkqueue = []; // TODO Should be a priority queue
+		handle.done = false;
 
 		for(var i = 0; i < meta.chunkcount; i++){
 			handle.chunkqueue.push(i);
@@ -324,6 +315,8 @@ window.DCDN = new (function(){
 				sendChunkRequest(meta.url, meta.hash, [chunknum], peerConnections[peerId].dataChannel);
 			}
 		} else {
+			handle.done = true
+			handle.callback(meta.url);
 			sendChunkRequest(meta.url, meta.hash, handle.chunkqueue, coordinationServer);
 		}
 	}
@@ -343,7 +336,10 @@ window.DCDN = new (function(){
 			}
 		}
 
-		if(inOrderComplete.length > handle.lastYeilded){
+		if(!handle.done && inOrderComplete.length > handle.lastYeilded){
+			if(inOrderComplete.length === handle.meta.chunkcount){
+				handle.done = true;
+			}
 			handle.lastYeilded = inOrderComplete.length;
 			var blob = new Blob(inOrderComplete, {type: handle.meta.contenttype});
 			handle.callback(URL.createObjectURL(blob));
@@ -405,16 +401,18 @@ window.DCDN = new (function(){
 
 	// DCDN API //
 
-	this.fetchResource = function(url, callback){
-		if(fatalError){
-			return callback(url);
+	return {
+		fetchResource: function(url, callback){
+			if(fatalError){
+				return callback(url);
+			}
+
+			url = canonicalizeUrl(url);
+
+			resourceHandles[url] = {
+				"callback": callback
+			};
+			sendMetadataRequest(url, coordinationServer);
 		}
-
-		url = canonicalizeUrl(url);
-
-		resourceHandles[url] = {
-			"callback": callback
-		};
-		sendMetadataRequest(url, coordinationServer);
-	};
+	}
 })();
