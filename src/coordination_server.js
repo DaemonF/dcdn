@@ -22,14 +22,14 @@ var coordinationServer = (function(){
 	var peers = {};
 	var fileCache = {};
 	var urlMetadataCache = { // TODO Remove
-		"http://localhost:8080/examples/chrome.png": {
+		"chrome.png": {
 			"hash": "fakeMd5Hash",
 			"length": 122169,
 			"contenttype": "image/png",
 			"chunksize": 15000,
 			"chunkcount": 9
 		},
-		"http://localhost:8080/examples/seattle.jpg": {
+		"seattle.jpg": {
 			"hash": "fakeMd5Hash",
 			"length": 3232686,
 			"contenttype": "image/jpeg",
@@ -78,10 +78,14 @@ var coordinationServer = (function(){
 	}
 
 	function loadMetadata(url, callback){
+		// TODO Remove this hack (it supports the hard coded metadata)
+		url = url.split("/");
+		url = url[url.length - 1];
+
 		if(url in urlMetadataCache){
 			callback(urlMetadataCache[url]);
 		} else {
-			// TODO impliment
+			// TODO impliment metadata generation
 			console.log("Error: url not in metadata cache: "+url);
 		}
 	}
