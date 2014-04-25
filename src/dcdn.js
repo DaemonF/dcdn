@@ -58,7 +58,8 @@ window.DCDN = (function(){
 	}
 
 
-	// CLASSES AND SINGLETONS //
+	// CLASSES //
+
 
 	function QueuedConnection(connection){
 		/*
@@ -152,7 +153,7 @@ window.DCDN = (function(){
 		fatalError = true;
 		for(var url in resourceHandles){
 			var handle = resourceHandles[url];
-			if(typeof handle.meta !== 'undefined'){
+			if(typeof handle.meta !== "undefined"){
 				if(handle.lastYeilded === handle.meta.chunkcount){
 					// Dont bother failing back for URLs already completed
 					continue;
@@ -314,20 +315,22 @@ window.DCDN = (function(){
 
 		meta.peers.push(0); // 0 is reserved for the coordination server
 		var chunkRequests = {};
+		var peerId;
 		for(i = 0; i < handle.chunkqueue.length; i++){
 			// Round robin the chunkrequests to all available peers.
 			var chunknum = handle.chunkqueue[i];
-			var peerId = meta.peers[i % meta.peers.length];
+			peerId = meta.peers[i % meta.peers.length];
 
-			if(typeof chunkRequests[peerId] === "undefined")
+			if(typeof chunkRequests[peerId] === "undefined"){
 				chunkRequests[peerId] = [];
+			}
 			chunkRequests[peerId].push(chunknum);
 		}
 
 		// Send out the requests
-		for(var peerId in chunkRequests){
+		for(peerId in chunkRequests){
 			var conn = coordinationServer;
-			if(peerId != 0){
+			if(peerId !== 0){
 				if( !(peerId in peerConnections) ){
 					connectToPeer(peerId, true);
 				}
@@ -429,5 +432,5 @@ window.DCDN = (function(){
 			};
 			sendMetadataRequest(url, coordinationServer);
 		}
-	}
+	};
 })();

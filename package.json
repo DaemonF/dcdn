@@ -33,8 +33,6 @@
 		"undef": true,
 		"unused": true,
 		"strict": true,
-		"trailing": true,
-		"maxcomplexity": 5,
-		"maxlen": 185
+		"trailing": true
 	}
 }
