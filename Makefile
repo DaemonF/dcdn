@@ -27,4 +27,4 @@ node_modules/ : package.json
 	npm install
 
 clean :
-	rm $(DEBUG_FILES) $(MINIFIED_FILES)
+	rm -f $(DEBUG_FILES) $(MINIFIED_FILES)
