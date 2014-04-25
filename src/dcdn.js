@@ -93,7 +93,7 @@ window.DCDN = new (function(){
 		};
 
 		conn.onmessage = function(evt){
-			evt.conn = conn;
+			evt.conn = this;
 			if(onmessage !== null){
 				onmessage(evt);
 			}
