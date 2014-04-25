@@ -330,7 +330,7 @@ window.DCDN = (function(){
 		// Send out the requests
 		for(peerId in chunkRequests){
 			var conn = coordinationServer;
-			if(peerId !== 0){
+			if(Number(peerId) !== 0){
 				if( !(peerId in peerConnections) ){
 					connectToPeer(peerId, true);
 				}
