@@ -2,18 +2,18 @@
 	"name": "dcdn",
 	"version": "0.1.0",
 	"description": "Development setup for building DCDN. A P2P CDN that requires no user intervention.",
-	"dependencies": {
-		"ws": "",
-		"http": "",
-		"connect": "",
-		"serve-static": "",
-		"serve-index": "",
-		"uglify-js": "",
-		"jshint": ""
-	},
 	"repository": {
 		"type" : "git",
 		"url" : "https://github.com/DaemonF/dcdn.git"
+	},
+	"dependencies": {
+		"ws": ""
+	},
+	"devDependencies": {
+		"connect": "",
+		"serve-static": "",
+		"uglify-js": "",
+		"jshint": ""
 	},
 	"jshintConfig": {
 		"bitwise": true,
