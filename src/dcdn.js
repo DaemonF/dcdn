@@ -297,27 +297,36 @@ window.DCDN = (function(){
 		handle.chunks = [];
 		handle.lastYeilded = 0; // Keep track of how many chunks we have yeilded to the client
 		handle.chunkqueue = []; // TODO Should be a priority queue
-		handle.done = false;
 
 		for(var i = 0; i < meta.chunkcount; i++){
 			handle.chunkqueue.push(i);
 		}
 
-		// TODO replace with real ordering algorthm
-		if(meta.peers.length !== 0){
-			for(i = 0; i < handle.chunkqueue.length; i++){
-				var chunknum = handle.chunkqueue[i];
 
-				var peerId = meta.peers[i % meta.peers.length];
+		// TODO replace here down with real ordering algorthm
+
+		meta.peers.push(0); // 0 is reserved for the coordination server
+		var chunkRequests = {};
+		for(i = 0; i < handle.chunkqueue.length; i++){
+			// Round robin the chunkrequests to all available peers.
+			var chunknum = handle.chunkqueue[i];
+			var peerId = meta.peers[i % meta.peers.length];
+
+			if(typeof chunkRequests[peerId] === "undefined")
+				chunkRequests[peerId] = [];
+			chunkRequests[peerId].push(chunknum);
+		}
+
+		// Send out the requests
+		for(var peerId in chunkRequests){
+			var conn = coordinationServer;
+			if(peerId != 0){
 				if( !(peerId in peerConnections) ){
 					connectToPeer(peerId, true);
 				}
-				sendChunkRequest(meta.url, meta.hash, [chunknum], peerConnections[peerId].dataChannel);
+				conn = peerConnections[peerId].dataChannel;
 			}
-		} else {
-			handle.done = true
-			handle.callback(meta.url);
-			sendChunkRequest(meta.url, meta.hash, handle.chunkqueue, coordinationServer);
+			sendChunkRequest(meta.url, meta.hash, chunkRequests[peerId], conn);
 		}
 	}
 
@@ -336,10 +345,9 @@ window.DCDN = (function(){
 			}
 		}
 
-		if(!handle.done && inOrderComplete.length > handle.lastYeilded){
-			if(inOrderComplete.length === handle.meta.chunkcount){
-				handle.done = true;
-			}
+		// TODO determine a heuristic for when to reasonably yield to the client
+		// It must be often enough for long video but not harm small files.
+		if(inOrderComplete.length === handle.meta.chunkcount){ 
 			handle.lastYeilded = inOrderComplete.length;
 			var blob = new Blob(inOrderComplete, {type: handle.meta.contenttype});
 			handle.callback(URL.createObjectURL(blob));
