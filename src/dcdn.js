@@ -32,8 +32,7 @@ window.DCDN = (function(){
 		}]
 	};
 	var RTC_DATA_CHAN_CONFIG = {
-		ordered: false,
-		maxRetransmitTime: 3000, // in milliseconds
+		ordered: false
 	};
 
 	// TODO persist this in a shared worker?
