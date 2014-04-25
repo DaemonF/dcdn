@@ -24,7 +24,8 @@ window.DCDN = (function(){
 
 	// GLOBALS //
 
-	var COORD_SERVER_URL="ws://localhost:8081/"; //TODO NICK Remove need for static define
+	var LINK = document.createElement("a"); // <a> element used for URL normalization
+	var DEFAULT_COORD_SERV_PORT = 8081;
 	var STUN_CONFIG = {
 		"iceServers": [{
 			"url": "stun:stun.l.google.com:19302"
@@ -35,11 +36,8 @@ window.DCDN = (function(){
 		maxRetransmitTime: 3000, // in milliseconds
 	};
 
-	var fatalError = false;
-	var link = document.createElement("a"); // <a> element used for URL normalization
-
 	// TODO persist this in a shared worker?
-	var coordinationServer = null; // A websocket connection to the coordination server
+	var fatalError = false;
 	var peerConnections = {}; // A hash of peerId -> WebRTCPeerConnection for each peer
 	var resourceHandles = {}; // A hash of URL to various info about the download or cached file
 
@@ -47,7 +45,7 @@ window.DCDN = (function(){
 	polyfill("RTCPeerConnection");
 
 	if(checkBrowserCompatibility()){
-		coordinationServer = new WebSocket(COORD_SERVER_URL);
+		var coordinationServer = new WebSocket(discoverCoordServerUrl());
 		coordinationServer.onmessage = recvMessage;
 		coordinationServer.onerror = onFatalError;
 		coordinationServer.onclose = onFatalError;
@@ -123,9 +121,15 @@ window.DCDN = (function(){
 	}
 
 	function canonicalizeUrl(url){
-		link.href = url;
-		url = link.protocol + "//" + link.host + link.pathname + link.search;
+		LINK.href = url;
+		url = LINK.protocol + "//" + LINK.host + LINK.pathname + LINK.search;
 		return url;
+	}
+
+	function discoverCoordServerUrl(){
+		LINK.href = window.location;
+		var host = LINK.host.split(":")[0];
+		return "ws://" + host + ":" + DEFAULT_COORD_SERV_PORT + "/";
 	}
 
 	function uint8Array2str(src) {
