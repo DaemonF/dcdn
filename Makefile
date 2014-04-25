@@ -6,19 +6,25 @@ LINT_CMD = node_modules/jshint/bin/jshint
 
 all : $(MINIFIED_FILES)
 
-debug : $(DEBUG_FILES)
-
-%.js : src/%.js
+dcdn.js : src/dcdn.js
 	cat $^ > $@
 
-%.min.js : %.js
-	$(LINT_CMD) $?
+coordination_server.js : src/coordination_server.js node_modules/
+	cat $< > $@
+
+%.min.js : %.js node_modules/
+	$(LINT_CMD) $<
 	node_modules/uglify-js/bin/uglifyjs $< > $@
 
-examples : debug examples/webserver.js
+debug : $(DEBUG_FILES)
+
+examples : debug examples/webserver.js node_modules/
 	# Examples available at: http://localhost:8080/examples/
 	node examples/webserver.js &
 	node coordination_server.js
+
+node_modules/ : package.json
+	npm install
 
 clean :
 	rm $(DEBUG_FILES) $(MINIFIED_FILES)

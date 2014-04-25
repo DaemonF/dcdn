@@ -19,6 +19,5 @@ A Distributed CDN based on modern web technologies
 
 ## Running the Examples ##
 1. Clone this repo
-2. run `npm install`
-3. run `make demo`
-4. Navigate to http://localhost:8080/examples/ in your browser (Chrome or Firefox)
+2. run `make examples`
+3. Navigate to http://localhost:8080/examples/ in your browser (Chrome or Firefox)
