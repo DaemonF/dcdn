@@ -27,9 +27,13 @@ window.DCDN = (function(){
 	var LINK = document.createElement("a"); // <a> element used for URL normalization
 	var DEFAULT_COORD_SERV_PORT = 8081;
 	var STUN_CONFIG = {
-		"iceServers": [{
-			"url": "stun:stun.l.google.com:19302"
-		}]
+		"iceServers": [
+			{ "url": "stun:stun.l.google.com:19302" },
+			{ "url": "stun:stunserver.org" },
+			{ "url": "stun:stun1.l.google.com:19302" },
+			{ "url": "stun:stun.ekiga.net" },
+			{ "url": "stun:stun2.l.google.com:19302" },
+		]
 	};
 	var RTC_DATA_CHAN_CONFIG = {
 		ordered: false
@@ -111,7 +115,7 @@ window.DCDN = (function(){
 				return prefixes[i];
 			}
 		}
-		console.error("Could not polyfill for "+name);
+		console.error("Browser does not seem to support "+name);
 	}
 
 	function checkBrowserCompatibility(){
@@ -154,15 +158,17 @@ window.DCDN = (function(){
 
 	function onFatalError(){
 		fatalError = true;
+		console.error("DCDN Fatal Error. All requests will be fullfilled by normal HTTP.");
+
+		// Fallback any incomplete downloads to HTTP
 		for(var url in resourceHandles){
 			var handle = resourceHandles[url];
 			if(typeof handle.meta !== "undefined"){
 				if(handle.lastYeilded === handle.meta.chunkcount){
-					// Dont bother failing back for URLs already completed
 					continue;
 				}
 			}
-			console.error("DCDN fatal error. Throwing back to normal download for: ", url);
+			console.log("Fallback to HTTP: ", url);
 			resourceHandles[url].callback(url);
 		}
 	}
@@ -285,11 +291,6 @@ window.DCDN = (function(){
 			return;
 		}
 
-		if(("url" in header) && !(header.url in resourceHandles)){
-			console.error("Got message about a URL we dont care about: %s", header.url);
-			return;
-		}
-
 		if(! (header.type in handlers) ){
 			console.error("Got message with unknown type: %o", header);
 			return;
@@ -299,6 +300,10 @@ window.DCDN = (function(){
 	}
 
 	function recvMetadata(message){
+		if(!(message.url in resourceHandles)){
+			return console.log("Got metadata for an unrequested URL: " + message.url);
+		}
+
 		// Stores metadata, sets up chunk queue and makes a few requests (Limited by the concurrent connection limit)
 		var meta = message;
 		delete meta.type;
@@ -344,6 +349,10 @@ window.DCDN = (function(){
 	}
 
 	function recvChunk(message, conn, binary){
+		if(!(message.url in resourceHandles)){
+			return console.log("Got chunk for an unrequested URL: " + message.url);
+		}
+
 		// Stores chunk, checks if done, calls callback if so
 		// Requests the next chunk in the chunk queue
 		var handle = resourceHandles[message.url];
@@ -369,6 +378,10 @@ window.DCDN = (function(){
 
 
 	function recvChunkFail(message){
+		if(!(message.url in resourceHandles)){
+			return console.log("Got chunkfail for an unrequested URL: " + message.url);
+		}
+
 		// Requests chunk from another source (always C. Serv at this point)
 		sendChunkRequest(message.url, resourceHandles[message.url].meta.hash, [message.chunk], coordinationServer);
 	}
@@ -387,6 +400,11 @@ window.DCDN = (function(){
 				reply.type = "chunk";
 				sendMessage(reply, conn, resourceHandles[message.url].chunks[chunk]);
 			} else {
+				if(typeof resourceHandles[message.url] === "undefined"){
+					// TODO Good stat
+					console.log("Got request for a URL we dont have at all: " + message.url);
+				}
+
 				reply.type = "chunkfail";
 				sendMessage(reply, conn);
 			}
