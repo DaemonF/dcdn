@@ -5,7 +5,7 @@
 
 /*
 	This server acts as a caching proxy for files accessed by URL.
-	It serves both metadata and file chunks to clients and also 
+	It serves both metadata and file chunks to clients and also
 	provides for peer to peer coordination.
 */
 
@@ -158,7 +158,7 @@ var coordinationServer = (function(){
 						sendMessage(reply, ws, file.slice(start, end));
 					}
 				});
-			}); 
+			});
 		},
 
 		"peerCoordMsg": function(message, ws, peerId){

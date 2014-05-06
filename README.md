@@ -15,7 +15,7 @@ A Distributed CDN based on modern web technologies
 - [ ] Implement URL caching to disk on C.Serv
 - [ ] Allow certain things to be accessed over HTTP to the C Serv (ie low latency metadata and chunks)
 - [ ] Persist as much as possible on the client
-- [ ] More Doccumentation of the protocol
+- [ ] More Documentation of the protocol
 - [ ] Add tons of stat collection for research
 
 ## Running the Examples ##
