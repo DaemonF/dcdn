@@ -1,5 +1,5 @@
-/* global window, document, console, URL, Blob, ArrayBuffer, Uint8Array, 
-	Uint16Array, WebSocket, RTCPeerConnection, RTCSessionDescription, 
+/* global window, document, console, URL, Blob, ArrayBuffer, Uint8Array,
+	Uint16Array, WebSocket, RTCPeerConnection, RTCSessionDescription,
 	RTCIceCandidate
 */
 
@@ -10,7 +10,7 @@
 		- web server
 		- coordination server (coordination_server.js)
 		- one or more clients with this script (dcdn.js)
-	
+
 	Roles:
 		- The coordination server acts as a caching-proxy to the HTTP server to support P2P coordination, chunking and metadata for peers
 		- Clients access the coord. server to get metadata (the eqiv of a .torrent file) and find peers.
@@ -63,7 +63,7 @@ window.DCDN = (function(){
 			Queued Connection wraps a webSocket-like connection to allow messages to
 			be enqueued for sending before the connection is ready.
 
-			It also inserts the socket handle into the on message event to 
+			It also inserts the socket handle into the on message event to
 			facillitate replying to messages.
 		*/
 
@@ -360,14 +360,14 @@ window.DCDN = (function(){
 
 		// TODO determine a heuristic for when to reasonably yield to the client
 		// It must be often enough for long video but not harm small files.
-		if(inOrderComplete.length === handle.meta.chunkcount){ 
+		if(inOrderComplete.length === handle.meta.chunkcount){
 			handle.lastYeilded = inOrderComplete.length;
 			var blob = new Blob(inOrderComplete, {type: handle.meta.contenttype});
 			handle.callback(URL.createObjectURL(blob));
 		}
 	}
 
-	
+
 	function recvChunkFail(message){
 		// Requests chunk from another source (always C. Serv at this point)
 		sendChunkRequest(message.url, resourceHandles[message.url].meta.hash, [message.chunk], coordinationServer);
@@ -376,7 +376,7 @@ window.DCDN = (function(){
 	function recvChunkRequest(message, conn){
 		for(var i = 0; i < message.chunks.length; i++){
 			var chunk = message.chunks[i];
-		
+
 			var reply = {
 				"url": message.url,
 				"chunk": chunk,
