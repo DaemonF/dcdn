@@ -46,6 +46,8 @@ window.DCDN = (function(){
 
 
 	polyfill("RTCPeerConnection");
+	polyfill("RTCSessionDescription");
+	polyfill("RTCIceCandidate");
 
 	if(checkBrowserCompatibility()){
 		var coordinationServer = new WebSocket(discoverCoordServerUrl());
