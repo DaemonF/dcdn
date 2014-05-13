@@ -117,6 +117,24 @@ var coordinationServer = (function(){
 
 	// RECV MESSAGES //
 
+	function recvMessage(message, ws, peerId){
+		var headerLength = message.readUInt16LE(0);
+		var header = JSON.parse(buffer2str(message.slice(2, 2 + headerLength)));
+		var binary = message.slice(2+headerLength);
+
+		if( !("type" in header) ){
+			console.error("!!! Got message with no type: %o", header);
+			return;
+		}
+
+		if( !(header.type in messageHandlers) ){
+			console.error("!!! Got message with unknown type: %o", header);
+			return;
+		}
+
+		messageHandlers[header.type](header, ws, peerId, binary);
+	}
+
 	var messageHandlers = {
 		"metadataRequest": function(message, ws, myPeerId){
 			console.log("<<< [%s] for %s", message.type, message.url);
@@ -180,8 +198,8 @@ var coordinationServer = (function(){
 	// API //
 
 	return {
-		start: function(port){
-			new WebSocketServer({"port": port}).on("connection", function(ws) {
+		start: function(wsPort, httpPort){
+			new WebSocketServer({"port": wsPort}).on("connection", function(ws) {
 				var peerId = nextPeerId++;
 				peers[peerId] = ws;
 
@@ -192,27 +210,55 @@ var coordinationServer = (function(){
 				});
 
 				ws.on("message", function(message) {
-					var headerLength = message.readUInt16LE(0);
-					var header = JSON.parse(buffer2str(message.slice(2, 2 + headerLength)));
-					var binary = message.slice(2+headerLength);
-
-					if( !("type" in header) ){
-						console.error("!!! Got message with no type: %o", header);
-						return;
-					}
-
-					if( !(header.type in messageHandlers) ){
-						console.error("!!! Got message with unknown type: %o", header);
-						return;
-					}
-
-					messageHandlers[header.type](header, ws, peerId, binary);
+					recvMessage(message, ws, peerId);
 				});
-
 			});
+
+			http.createServer(function(request, response){
+				switch(request.method){
+				case "POST":
+					var body = new Buffer(parseInt(request.headers["content-length"]));
+					var recieved = 0;
+
+					var conn = {
+						"send": function(message){
+							response.writeHead(200, {
+								"Access-Control-Allow-Origin": "*",
+								"Content-Type": "application/octet-stream"
+							});
+							response.write(message);
+							response.end();
+						}
+					}
+
+					request.setEncoding('binary');
+					request.on("data", function(chunk){
+						body.write(chunk, recieved, chunk.length, 'binary');
+						recieved += chunk.length;
+					})
+					request.on("end", function(){
+						recvMessage(body, conn, -1);
+					});
+					break;
+				case "OPTIONS":
+					var requestedHeaders = request.headers["access-control-request-headers"];
+					response.writeHead(200, {
+						"Allow": "POST, OPTIONS",
+						"Access-Control-Allow-Origin": "*",
+						"Access-Control-Allow-Headers": requestedHeaders
+					});
+					response.end();
+					break;
+				default:
+					console.log("Got HTTP %s request. Ignoring.", request.method);
+					response.writeHead(404);
+					response.end();
+					break;
+				}
+			}).listen(httpPort);
 		}
 	};
 
 })();
 
-coordinationServer.start(8081);
+coordinationServer.start(8081, 8082);

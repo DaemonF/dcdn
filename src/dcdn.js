@@ -50,6 +50,11 @@ window.DCDN = (function(){
 	polyfill("RTCIceCandidate");
 
 	if(checkBrowserCompatibility()){
+		// Low latency connection for one-shot requests
+		var coordinationServerHttp = new HttpConnection("http://localhost:8082/");
+		coordinationServerHttp.onmessage = recvMessage;
+
+		// Push connection but requires lengthy setup
 		var coordinationServer = new WebSocket(discoverCoordServerUrl());
 		coordinationServer.onmessage = recvMessage;
 		coordinationServer.onerror = onFatalError;
@@ -103,6 +108,27 @@ window.DCDN = (function(){
 				onopen(evt);
 			}
 		};
+	}
+
+	function HttpConnection(url){
+		/*
+			Presents the basic connection interface but uses XHR as the underlying
+			transport to offer low-latency requests to the Coord Server.
+		*/
+
+		this.onmessage = null;
+
+		this.send = function(message){
+			var xhr = new XMLHttpRequest();
+			xhr.open("POST", url, true);
+			xhr.setRequestHeader('Content-type', 'application/octet-stream');
+			xhr.responseType = "arraybuffer";
+			xhr.onload = function(evt){
+				console.log(xhr.response);
+				this.onmessage({"data": xhr.response, "conn": HttpConnection});
+			}.bind(this);
+			xhr.send(new Uint8Array(message));
+		}
 	}
 
 
