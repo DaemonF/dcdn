@@ -229,13 +229,13 @@ var coordinationServer = (function(){
 							response.write(message);
 							response.end();
 						}
-					}
+					};
 
-					request.setEncoding('binary');
+					request.setEncoding("binary");
 					request.on("data", function(chunk){
-						body.write(chunk, recieved, chunk.length, 'binary');
+						body.write(chunk, recieved, chunk.length, "binary");
 						recieved += chunk.length;
-					})
+					});
 					request.on("end", function(){
 						recvMessage(body, conn, -1);
 					});

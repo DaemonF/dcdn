@@ -1,6 +1,6 @@
 /* global window, document, console, URL, Blob, ArrayBuffer, Uint8Array,
 	Uint16Array, WebSocket, RTCPeerConnection, RTCSessionDescription,
-	RTCIceCandidate
+	RTCIceCandidate, XMLHttpRequest
 */
 
 // DCDN: An open-source cdn powered by peer to peer sharing
@@ -121,14 +121,14 @@ window.DCDN = (function(){
 		this.send = function(message){
 			var xhr = new XMLHttpRequest();
 			xhr.open("POST", url, true);
-			xhr.setRequestHeader('Content-type', 'application/octet-stream');
+			xhr.setRequestHeader("Content-type", "application/octet-stream");
 			xhr.responseType = "arraybuffer";
-			xhr.onload = function(evt){
+			xhr.onload = function(){
 				console.log(xhr.response);
 				this.onmessage({"data": xhr.response, "conn": HttpConnection});
 			}.bind(this);
 			xhr.send(new Uint8Array(message));
-		}
+		};
 	}
 
 
