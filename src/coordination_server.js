@@ -158,23 +158,21 @@ var coordinationServer = (function(){
 		},
 
 		"chunkRequest": function(message, ws){
-			console.log("<<< [%s] chunk: %s for %s", message.type, message.chunks, message.url);
+			console.log("<<< [%s] chunk: %s for %s", message.type, message.chunk, message.url);
 			loadFile(message.url, function(file){
 				loadMetadata(message.url, function(metadata){
-					for(var i = 0; i < message.chunks.length; i++){
-						var chunk = message.chunks[i];
-						var start = chunk * metadata.chunksize;
-						var end = Math.min(start + metadata.chunksize, metadata.length);
+					var chunk = message.chunk;
+					var start = chunk * metadata.chunksize;
+					var end = Math.min(start + metadata.chunksize, metadata.length);
 
-						var reply = {
-							"type": "chunk",
-							"url": message.url,
-							"chunk": chunk
-						};
+					var reply = {
+						"type": "chunk",
+						"url": message.url,
+						"chunk": chunk
+					};
 
-						console.log(">>> [%s] chunk: %s for %s", reply.type, reply.chunk, reply.url);
-						sendMessage(reply, ws, file.slice(start, end));
-					}
+					console.log(">>> [%s] chunk: %s for %s", reply.type, reply.chunk, reply.url);
+					sendMessage(reply, ws, file.slice(start, end));
 				});
 			});
 		},

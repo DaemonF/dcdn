@@ -38,11 +38,14 @@ window.DCDN = (function(){
 	var RTC_DATA_CHAN_CONFIG = {
 		ordered: false
 	};
+	var CHUNKS_IN_FLIGHT_LIMIT = 10;
 
 	// TODO persist this in a shared worker?
 	var fatalError = false;
 	var peerConnections = {}; // A hash of peerId -> WebRTCPeerConnection for each peer
 	var resourceHandles = {}; // A hash of URL to various info about the download or cached file
+	var chunkRequestQueue = [];
+	var chunksInFlight = 0;
 
 
 	polyfill("RTCPeerConnection");
@@ -124,11 +127,16 @@ window.DCDN = (function(){
 			xhr.setRequestHeader("Content-type", "application/octet-stream");
 			xhr.responseType = "arraybuffer";
 			xhr.onload = function(){
-				console.log(xhr.response);
 				this.onmessage({"data": xhr.response, "conn": HttpConnection});
 			}.bind(this);
 			xhr.send(new Uint8Array(message));
 		};
+	}
+
+	function Chunk(metadata, chunkNum){
+		this.url = metadata.url;
+		this.hash = metadata.hash;
+		this.num = chunkNum;
 	}
 
 
@@ -198,6 +206,34 @@ window.DCDN = (function(){
 			}
 			console.log("Fallback to HTTP: ", url);
 			resourceHandles[url].callback(url);
+		}
+	}
+
+	function getRandomInt(min, max) { // Inclusive max and min
+		return Math.floor(Math.random() * (max - min + 1)) + min;
+	}
+
+	// Requests a single chunk then calls itself to do more
+	function scheduleChunks(){
+		if (chunksInFlight <= CHUNKS_IN_FLIGHT_LIMIT && chunkRequestQueue.length > 0) {
+			// Pick a peer or the coordination server
+			var chunk = chunkRequestQueue.shift();
+			var peerIds = resourceHandles[chunk.url].meta.peers;
+			var rnd = getRandomInt(-1, peerIds.length - 1);
+			var peer = coordinationServer;
+
+			if(rnd !== -1){
+				var peerId = peerIds[rnd];
+				if(typeof peerConnections[peerId] === "undefined"){
+					connectToPeer(peerId, true);
+				}
+				peer = peerConnections[peerId].dataChannel;
+			}
+
+			// Request the next chunk
+			sendChunkRequest(chunk.url, chunk.hash, chunk.num, peer);
+			chunksInFlight++;
+			scheduleChunks();
 		}
 	}
 
@@ -286,12 +322,12 @@ window.DCDN = (function(){
 		sendMessage(msg, coordinationServer);
 	}
 
-	function sendChunkRequest(url, hash, chunklist, connection){
+	function sendChunkRequest(url, hash, chunknum, connection){
 		sendMessage({
 			"type": "chunkRequest",
 			"url": url,
 			"hash": hash,
-			"chunks": chunklist
+			"chunk": chunknum
 		}, connection);
 	}
 
@@ -340,40 +376,12 @@ window.DCDN = (function(){
 		handle.meta = meta;
 		handle.chunks = [];
 		handle.lastYeilded = 0; // Keep track of how many chunks we have yeilded to the client
-		handle.chunkqueue = []; // TODO Should be a priority queue
 
 		for(var i = 0; i < meta.chunkcount; i++){
-			handle.chunkqueue.push(i);
+			chunkRequestQueue.push(new Chunk(meta, i));
 		}
 
-
-		// TODO replace here down with real ordering algorthm
-
-		meta.peers.push(0); // 0 is reserved for the coordination server
-		var chunkRequests = {};
-		var peerId;
-		for(i = 0; i < handle.chunkqueue.length; i++){
-			// Round robin the chunkrequests to all available peers.
-			var chunknum = handle.chunkqueue[i];
-			peerId = meta.peers[i % meta.peers.length];
-
-			if(typeof chunkRequests[peerId] === "undefined"){
-				chunkRequests[peerId] = [];
-			}
-			chunkRequests[peerId].push(chunknum);
-		}
-
-		// Send out the requests
-		for(peerId in chunkRequests){
-			var conn = coordinationServer;
-			if(Number(peerId) !== 0){
-				if( !(peerId in peerConnections) ){
-					connectToPeer(peerId, true);
-				}
-				conn = peerConnections[peerId].dataChannel;
-			}
-			sendChunkRequest(meta.url, meta.hash, chunkRequests[peerId], conn);
-		}
+		scheduleChunks();
 	}
 
 	function recvChunk(message, conn, binary){
@@ -402,6 +410,9 @@ window.DCDN = (function(){
 			var blob = new Blob(inOrderComplete, {type: handle.meta.contenttype});
 			handle.callback(URL.createObjectURL(blob));
 		}
+
+		chunksInFlight--;
+		scheduleChunks();
 	}
 
 
@@ -410,32 +421,30 @@ window.DCDN = (function(){
 			return console.log("Got chunkfail for an unrequested URL: " + message.url);
 		}
 
-		// Requests chunk from another source (always C. Serv at this point)
-		sendChunkRequest(message.url, resourceHandles[message.url].meta.hash, [message.chunk], coordinationServer);
+		chunkRequestQueue.unshift(new Chunk(resourceHandles[message.url], message.chunk));
+		scheduleChunks();
 	}
 
 	function recvChunkRequest(message, conn){
-		for(var i = 0; i < message.chunks.length; i++){
-			var chunk = message.chunks[i];
+		var chunk = message.chunk;
 
-			var reply = {
-				"url": message.url,
-				"chunk": chunk,
-			};
+		var reply = {
+			"url": message.url,
+			"chunk": chunk,
+		};
 
-			if(typeof resourceHandles[message.url] !== "undefined" &&
-				typeof resourceHandles[message.url].chunks[chunk] !== "undefined"){
-				reply.type = "chunk";
-				sendMessage(reply, conn, resourceHandles[message.url].chunks[chunk]);
-			} else {
-				if(typeof resourceHandles[message.url] === "undefined"){
-					// TODO Good stat
-					console.log("Got request for a URL we dont have at all: " + message.url);
-				}
-
-				reply.type = "chunkfail";
-				sendMessage(reply, conn);
+		if(typeof resourceHandles[message.url] !== "undefined" &&
+			typeof resourceHandles[message.url].chunks[chunk] !== "undefined"){
+			reply.type = "chunk";
+			sendMessage(reply, conn, resourceHandles[message.url].chunks[chunk]);
+		} else {
+			if(typeof resourceHandles[message.url] === "undefined"){
+				// TODO Good stat
+				console.log("Got request for a URL we dont have at all: " + message.url);
 			}
+
+			reply.type = "chunkfail";
+			sendMessage(reply, conn);
 		}
 	}
 
