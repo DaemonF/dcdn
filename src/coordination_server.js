@@ -125,10 +125,11 @@ var coordinationServer = (function(){
 	// RECV MESSAGES //
 
 	function recvMessage(message, ws, peerId){
+		var header, binary;
 		try {
 			var headerLength = message.readUInt16LE(0);
-			var header = JSON.parse(buffer2str(message.slice(2, 2 + headerLength)));
-			var binary = message.slice(2+headerLength);
+			header = JSON.parse(buffer2str(message.slice(2, 2 + headerLength)));
+			binary = message.slice(2+headerLength);
 		} catch(e) {
 			return console.error("!!! Could not parse message.");
 		}
