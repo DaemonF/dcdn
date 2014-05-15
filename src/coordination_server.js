@@ -35,6 +35,13 @@ var coordinationServer = (function(){
 			"contenttype": "image/jpeg",
 			"chunksize": 15000,
 			"chunkcount": 216
+		},
+		"bbb_1080p.mp4": {
+			"hash": "fakeMd5Hash",
+			"length": 358001737,
+			"contenttype": "video/mp4",
+			"chunksize": 15000,
+			"chunkcount": 23867
 		}
 	};
 
@@ -118,18 +125,20 @@ var coordinationServer = (function(){
 	// RECV MESSAGES //
 
 	function recvMessage(message, ws, peerId){
-		var headerLength = message.readUInt16LE(0);
-		var header = JSON.parse(buffer2str(message.slice(2, 2 + headerLength)));
-		var binary = message.slice(2+headerLength);
+		try {
+			var headerLength = message.readUInt16LE(0);
+			var header = JSON.parse(buffer2str(message.slice(2, 2 + headerLength)));
+			var binary = message.slice(2+headerLength);
+		} catch(e) {
+			return console.error("!!! Could not parse message.");
+		}
 
 		if( !("type" in header) ){
-			console.error("!!! Got message with no type: %o", header);
-			return;
+			return console.error("!!! Got message with no type: %o", header);
 		}
 
 		if( !(header.type in messageHandlers) ){
-			console.error("!!! Got message with unknown type: %o", header);
-			return;
+			return console.error("!!! Got message with unknown type: %o", header);
 		}
 
 		messageHandlers[header.type](header, ws, peerId, binary);
@@ -143,7 +152,7 @@ var coordinationServer = (function(){
 				reply.type = "metadata";
 				reply.url = message.url;
 
-				// Replace this with file specific peers
+				// TODO Replace this with file specific peers
 				var peerlist = [];
 				for(var peerId in peers){
 					if(myPeerId !== Number(peerId)){
@@ -159,6 +168,7 @@ var coordinationServer = (function(){
 
 		"chunkRequest": function(message, ws){
 			console.log("<<< [%s] chunk: %s for %s", message.type, message.chunk, message.url);
+			console.error("Chunk requests to the coordination server are deprecated. Use httpChunkRequest");
 			loadFile(message.url, function(file){
 				loadMetadata(message.url, function(metadata){
 					var chunk = message.chunk;

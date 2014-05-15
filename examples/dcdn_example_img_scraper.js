@@ -4,7 +4,7 @@ for(var i = 0; i < imgTags.length; i++){
 	var tag = imgTags[i];
 	var url = tag.getAttribute("data-src");
 
-	DCDN.fetchResource(url, function(bloburl){
-		tag.src = bloburl;
+	DCDN.fetchResource(url, function(getBlobUrl){
+		tag.src = getBlobUrl();
 	});
 }

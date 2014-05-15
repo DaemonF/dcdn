@@ -1,6 +1,6 @@
 /* global window, document, console, URL, Blob, ArrayBuffer, Uint8Array,
 	Uint16Array, WebSocket, RTCPeerConnection, RTCSessionDescription,
-	RTCIceCandidate, XMLHttpRequest
+	RTCIceCandidate, XMLHttpRequest, performance
 */
 
 // DCDN: An open-source cdn powered by peer to peer sharing
@@ -134,8 +134,7 @@ window.DCDN = (function(){
 	}
 
 	function Chunk(metadata, chunkNum){
-		this.url = metadata.url;
-		this.hash = metadata.hash;
+		this.meta = metadata;
 		this.num = chunkNum;
 	}
 
@@ -218,23 +217,48 @@ window.DCDN = (function(){
 		if (chunksInFlight <= CHUNKS_IN_FLIGHT_LIMIT && chunkRequestQueue.length > 0) {
 			// Pick a peer or the coordination server
 			var chunk = chunkRequestQueue.shift();
-			var peerIds = resourceHandles[chunk.url].meta.peers;
+			var peerIds = chunk.meta.peers; // TODO only use peers we are already connected to
 			var rnd = getRandomInt(-1, peerIds.length - 1);
-			var peer = coordinationServer;
 
-			if(rnd !== -1){
+			if(rnd === -1){
+				httpChunkRequest(chunk.meta, chunk.num);
+			} else {
 				var peerId = peerIds[rnd];
 				if(typeof peerConnections[peerId] === "undefined"){
 					connectToPeer(peerId, true);
 				}
-				peer = peerConnections[peerId].dataChannel;
+				sendChunkRequest(peerConnections[peerId].dataChannel, chunk.meta, chunk.num);
 			}
 
 			// Request the next chunk
-			sendChunkRequest(chunk.url, chunk.hash, chunk.num, peer);
 			chunksInFlight++;
 			scheduleChunks();
 		}
+	}
+
+	function httpChunkRequest(metadata, chunknum, count){
+		if(typeof count === "undefined"){
+			count = 1;
+		}
+		console.log(performance.now() + " HTTP Request chunk "+chunknum+" through "+(chunknum+count-1));
+		var start = chunknum * metadata.chunksize;
+		var end = Math.min(start + (count*metadata.chunksize), metadata.length) - 1;
+
+		var xhr = new XMLHttpRequest();
+		xhr.open("GET", metadata.url, true);
+		xhr.setRequestHeader("Range", "bytes="+start+"-"+end);
+		xhr.responseType = "arraybuffer";
+		xhr.onload = function(){
+			if(xhr.response.byteLength !== (1 + end - start)){
+				console.error("HTTP server returned a different range than expected.");
+			}
+			for(var i = 0; i < count; i++){
+				console.log(performance.now() + " HTTP Got chunk "+(i+chunknum));
+				var chunkData = xhr.response.slice(i*metadata.chunksize, (i+1)*metadata.chunksize);
+				recvChunk({ "chunk": (i+chunknum), "url": metadata.url }, null, new Uint8Array(chunkData));
+			}
+		};
+		xhr.send();
 	}
 
 
@@ -257,7 +281,7 @@ window.DCDN = (function(){
 		// send any ice candidates to the other peer
 		conn.onicecandidate = function (evt) {
 			if (evt.candidate){
-				sendPeerCoordMesg(peerId, "candidate", evt.candidate);
+				sendPeerCoordMesg(coordinationServer, peerId, "candidate", evt.candidate);
 			}
 		};
 
@@ -265,7 +289,7 @@ window.DCDN = (function(){
 		conn.onnegotiationneeded = function () {
 			conn.createOffer(function(desc){
 				conn.setLocalDescription(desc, function () {
-					sendPeerCoordMesg(peerId, "sdp", conn.localDescription);
+					sendPeerCoordMesg(coordinationServer, peerId, "sdp", conn.localDescription);
 				}, logError);
 			}, logError);
 		};
@@ -295,6 +319,10 @@ window.DCDN = (function(){
 		// Write the header
 		var headerLengthField = new Uint16Array(buf, 0, 1);
 		headerLengthField[0] = headerString.length;
+		if(headerLengthField[0] !== headerString.length){
+			return console.error("Tried to send a message longer than is possible.");
+		}
+
 		var headerBuf = new Uint8Array(buf, headerStringOffset, headerString.length);
 		str2uint8Array(headerString, headerBuf);
 
@@ -302,31 +330,31 @@ window.DCDN = (function(){
 		var binaryBuf = new Uint8Array(buf, binaryOffset);
 		binaryBuf.set(binary);
 
-		console.log("SENT [%s] [Binary: %sB] %o", header.type, binary.length, header);
+		console.log(performance.now() + " SENT [%s] [Binary: %sB] %o", header.type, binary.length, header);
 		connection.send(buf);
 	}
 
-	function sendMetadataRequest(url){
+	function sendMetadataRequest(connection, url){
 		sendMessage({
 			"type": "metadataRequest",
 			"url": url
-		}, coordinationServer);
+		}, connection);
 	}
 
-	function sendPeerCoordMesg(peerId, type, message){
+	function sendPeerCoordMesg(connection, peerId, type, message){
 		var msg = {
 			"type": "peerCoordMsg",
 			"to": peerId
 		};
 		msg[type] = message;
-		sendMessage(msg, coordinationServer);
+		sendMessage(msg, connection);
 	}
 
-	function sendChunkRequest(url, hash, chunknum, connection){
+	function sendChunkRequest(connection, metadata, chunknum){
 		sendMessage({
 			"type": "chunkRequest",
-			"url": url,
-			"hash": hash,
+			"url": metadata.url,
+			"hash": metadata.hash,
 			"chunk": chunknum
 		}, connection);
 	}
@@ -348,7 +376,7 @@ window.DCDN = (function(){
 		var header = JSON.parse(uint8Array2str(new Uint8Array(msgEvent.data, 2, headerLength)));
 		var binary = new Uint8Array(msgEvent.data, 2+headerLength);
 
-		console.log("GOT [%s] [Binary: %sB] %o", header.type, binary.length, header);
+		console.log(performance.now() + " GOT [%s] [Binary: %sB] %o", header.type, binary.length, header);
 
 		if(! ("type" in header) ){
 			console.error("Got message with no type: %o", header);
@@ -377,11 +405,14 @@ window.DCDN = (function(){
 		handle.chunks = [];
 		handle.lastYeilded = 0; // Keep track of how many chunks we have yeilded to the client
 
-		for(var i = 0; i < meta.chunkcount; i++){
-			chunkRequestQueue.push(new Chunk(meta, i));
+		if(meta.peers.length > 0){
+			for(var i = 0; i < meta.chunkcount; i++){
+				chunkRequestQueue.push(new Chunk(meta, i));
+			}
+			scheduleChunks();
+		} else {
+			httpChunkRequest(meta, 0, meta.chunkcount);
 		}
-
-		scheduleChunks();
 	}
 
 	function recvChunk(message, conn, binary){
@@ -403,12 +434,19 @@ window.DCDN = (function(){
 			}
 		}
 
-		// TODO determine a heuristic for when to reasonably yield to the client
-		// It must be often enough for long video but not harm small files.
-		if(inOrderComplete.length === handle.meta.chunkcount){
+		if((typeof handle.onprogress === "function") && (inOrderComplete.length > handle.lastYeilded)){
 			handle.lastYeilded = inOrderComplete.length;
-			var blob = new Blob(inOrderComplete, {type: handle.meta.contenttype});
-			handle.callback(URL.createObjectURL(blob));
+			handle.onprogress(function(){
+				var blob = new Blob(inOrderComplete, {type: handle.meta.contenttype});
+				return URL.createObjectURL(blob);
+			});
+		}
+
+		if((typeof handle.oncomplete === "function") && (inOrderComplete.length === handle.meta.chunkcount)){
+			handle.oncomplete(function(){
+				var blob = new Blob(inOrderComplete, {type: handle.meta.contenttype});
+				return URL.createObjectURL(blob);
+			});
 		}
 
 		chunksInFlight--;
@@ -421,7 +459,8 @@ window.DCDN = (function(){
 			return console.log("Got chunkfail for an unrequested URL: " + message.url);
 		}
 
-		chunkRequestQueue.unshift(new Chunk(resourceHandles[message.url], message.chunk));
+		chunkRequestQueue.unshift(new Chunk(resourceHandles[message.url].meta, message.chunk));
+		chunksInFlight--;
 		scheduleChunks();
 	}
 
@@ -460,7 +499,7 @@ window.DCDN = (function(){
 				if (conn.remoteDescription.type === "offer"){
 					conn.createAnswer(function(desc){
 						conn.setLocalDescription(desc, function () {
-							sendPeerCoordMesg(message.from, "sdp", conn.localDescription);
+							sendPeerCoordMesg(coordinationServer, message.from, "sdp", conn.localDescription);
 						}, logError);
 					}, logError);
 				}
@@ -478,17 +517,21 @@ window.DCDN = (function(){
 	// DCDN API //
 
 	return {
-		fetchResource: function(url, callback){
+		fetchResource: function(url, oncomplete, onprogress){
 			if(fatalError){
-				return callback(url);
+				return oncomplete(function(){
+					return url;
+				});
 			}
 
 			url = canonicalizeUrl(url);
 
 			resourceHandles[url] = {
-				"callback": callback
+				"onprogress": onprogress,
+				"oncomplete": oncomplete
 			};
-			sendMetadataRequest(url, coordinationServer);
+
+			sendMetadataRequest(coordinationServer, url);
 		}
 	};
 })();
