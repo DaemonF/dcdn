@@ -204,7 +204,9 @@ window.DCDN = (function(){
 				}
 			}
 			console.log("Fallback to HTTP: ", url);
-			resourceHandles[url].callback(url);
+			resourceHandles[url].oncomplete(function(){
+				return url;
+			});
 		}
 	}
 
@@ -434,8 +436,8 @@ window.DCDN = (function(){
 			}
 		}
 
+		handle.lastYeilded = inOrderComplete.length;
 		if((typeof handle.onprogress === "function") && (inOrderComplete.length > handle.lastYeilded)){
-			handle.lastYeilded = inOrderComplete.length;
 			handle.onprogress(function(){
 				var blob = new Blob(inOrderComplete, {type: handle.meta.contenttype});
 				return URL.createObjectURL(blob);
