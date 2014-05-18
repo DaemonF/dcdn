@@ -42,6 +42,20 @@ var coordinationServer = (function(){
 			"contenttype": "video/mp4",
 			"chunksize": 15000,
 			"chunkcount": 23867
+		},
+		"bbb_trailer.webm": {
+			"hash": "fakeMd5Hash",
+			"length": 2165175,
+			"contenttype": "video/webm",
+			"chunksize": 15000,
+			"chunkcount": 145
+		},
+		"test.webm": {
+			"hash": "fakeMd5Hash",
+			"length": 219448,
+			"contenttype": "video/webm",
+			"chunksize": 15000,
+			"chunkcount": 15
 		}
 	};
 
@@ -207,8 +221,8 @@ var coordinationServer = (function(){
 	// API //
 
 	return {
-		start: function(wsPort, httpPort){
-			new WebSocketServer({"port": wsPort}).on("connection", function(ws) {
+		start: function(port){
+			new WebSocketServer({"port": port}).on("connection", function(ws) {
 				var peerId = nextPeerId++;
 				peers[peerId] = ws;
 
@@ -222,52 +236,9 @@ var coordinationServer = (function(){
 					recvMessage(message, ws, peerId);
 				});
 			});
-
-			http.createServer(function(request, response){
-				switch(request.method){
-				case "POST":
-					var body = new Buffer(parseInt(request.headers["content-length"]));
-					var recieved = 0;
-
-					var conn = {
-						"send": function(message){
-							response.writeHead(200, {
-								"Access-Control-Allow-Origin": "*",
-								"Content-Type": "application/octet-stream"
-							});
-							response.write(message);
-							response.end();
-						}
-					};
-
-					request.setEncoding("binary");
-					request.on("data", function(chunk){
-						body.write(chunk, recieved, chunk.length, "binary");
-						recieved += chunk.length;
-					});
-					request.on("end", function(){
-						recvMessage(body, conn, -1);
-					});
-					break;
-				case "OPTIONS":
-					var requestedHeaders = request.headers["access-control-request-headers"];
-					response.writeHead(200, {
-						"Allow": "POST, OPTIONS",
-						"Access-Control-Allow-Origin": "*",
-						"Access-Control-Allow-Headers": requestedHeaders
-					});
-					response.end();
-					break;
-				default:
-					console.log("Got HTTP %s request. Ignoring.", request.method);
-					response.writeHead(404);
-					response.end();
-					break;
-				}
-			}).listen(httpPort);
 		}
 	};
 
 })();
 
-coordinationServer.start(8081, 8082);
+coordinationServer.start(8081);

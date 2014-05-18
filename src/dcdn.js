@@ -21,6 +21,14 @@
 window.DCDN = (function(){
 	"use strict";
 
+	var DEBUG = true;
+	var logger = console;
+	if(!DEBUG){
+		logger = {
+			"log": function(){},
+			"error": console.error
+		};
+	}
 
 	// GLOBALS //
 
@@ -39,6 +47,8 @@ window.DCDN = (function(){
 		ordered: false
 	};
 	var CHUNKS_IN_FLIGHT_LIMIT = 10;
+	var HTTP_INTITIAL_LOAD_PERC = 0.20; // Load about %15 of the file from HTTP to give peers time to connect
+	var HTTP_INTITIAL_LOAD_MAX_CHUNKS = 20; // But load no more than 20 chunks via HTTP (To prevent long startup lag)
 
 	// TODO persist this in a shared worker?
 	var fatalError = false;
@@ -53,10 +63,6 @@ window.DCDN = (function(){
 	polyfill("RTCIceCandidate");
 
 	if(checkBrowserCompatibility()){
-		// Low latency connection for one-shot requests
-		var coordinationServerHttp = new HttpConnection("http://localhost:8082/");
-		coordinationServerHttp.onmessage = recvMessage;
-
 		// Push connection but requires lengthy setup
 		var coordinationServer = new WebSocket(discoverCoordServerUrl());
 		coordinationServer.onmessage = recvMessage;
@@ -113,26 +119,6 @@ window.DCDN = (function(){
 		};
 	}
 
-	function HttpConnection(url){
-		/*
-			Presents the basic connection interface but uses XHR as the underlying
-			transport to offer low-latency requests to the Coord Server.
-		*/
-
-		this.onmessage = null;
-
-		this.send = function(message){
-			var xhr = new XMLHttpRequest();
-			xhr.open("POST", url, true);
-			xhr.setRequestHeader("Content-type", "application/octet-stream");
-			xhr.responseType = "arraybuffer";
-			xhr.onload = function(){
-				this.onmessage({"data": xhr.response, "conn": HttpConnection});
-			}.bind(this);
-			xhr.send(new Uint8Array(message));
-		};
-	}
-
 	function Chunk(metadata, chunkNum){
 		this.meta = metadata;
 		this.num = chunkNum;
@@ -150,7 +136,7 @@ window.DCDN = (function(){
 				return prefixes[i];
 			}
 		}
-		console.error("Browser does not seem to support "+name);
+		logger.error("Browser does not seem to support "+name);
 	}
 
 	function checkBrowserCompatibility(){
@@ -176,24 +162,24 @@ window.DCDN = (function(){
 
 	function str2uint8Array(str, dest) {
 		if(dest.length !== str.length){
-			return console.error("dest is not the right size for the given string.");
+			return logger.error("dest is not the right size for the given string.");
 		}
 		for(var i=0; i < str.length; i++) {
 			var charCode = str.charCodeAt(i);
 			if(charCode > 255){
-				console.error("Non-ASCII character in string '%s'. Cannot convert to byte.", str[i]);
+				logger.error("Non-ASCII character in string '%s'. Cannot convert to byte.", str[i]);
 			}
 			dest[i] = charCode;
 		}
 	}
 
 	function logError(error){
-		console.error("RTC Error: %s", error);
+		logger.error("RTC Error: %s", error);
 	}
 
 	function onFatalError(){
 		fatalError = true;
-		console.error("DCDN Fatal Error. All requests will be fullfilled by normal HTTP.");
+		logger.error("DCDN Fatal Error. All requests will be fullfilled by normal HTTP.");
 
 		// Fallback any incomplete downloads to HTTP
 		for(var url in resourceHandles){
@@ -203,10 +189,10 @@ window.DCDN = (function(){
 					continue;
 				}
 			}
-			console.log("Fallback to HTTP: ", url);
+			logger.log("Fallback to HTTP: ", url);
 			resourceHandles[url].oncomplete(function(){
 				return url;
-			});
+			}); // jshint ignore:line
 		}
 	}
 
@@ -242,7 +228,11 @@ window.DCDN = (function(){
 		if(typeof count === "undefined"){
 			count = 1;
 		}
-		console.log(performance.now() + " HTTP Request chunk "+chunknum+" through "+(chunknum+count-1));
+		if(count <= 0){
+			return;
+		}
+
+		logger.log(performance.now() + " HTTP Request chunk "+chunknum+ (count !== 1 ? " through "+(chunknum+count-1) : ""));
 		var start = chunknum * metadata.chunksize;
 		var end = Math.min(start + (count*metadata.chunksize), metadata.length) - 1;
 
@@ -252,10 +242,10 @@ window.DCDN = (function(){
 		xhr.responseType = "arraybuffer";
 		xhr.onload = function(){
 			if(xhr.response.byteLength !== (1 + end - start)){
-				console.error("HTTP server returned a different range than expected.");
+				logger.error("HTTP server returned a different range than expected.");
 			}
 			for(var i = 0; i < count; i++){
-				console.log(performance.now() + " HTTP Got chunk "+(i+chunknum));
+				logger.log(performance.now() + " HTTP Got chunk "+(i+chunknum));
 				var chunkData = xhr.response.slice(i*metadata.chunksize, (i+1)*metadata.chunksize);
 				recvChunk({ "chunk": (i+chunknum), "url": metadata.url }, null, new Uint8Array(chunkData));
 			}
@@ -269,10 +259,10 @@ window.DCDN = (function(){
 	function setupDataChannel(conn, dataChannel){
 		dataChannel.onmessage = recvMessage;
 		dataChannel.onclose = function(evt){
-			console.error("CONN CLOSED: ", conn, evt);
+			logger.error("CONN CLOSED: ", conn, evt);
 		};
 		dataChannel.onerror = function(evt){
-			console.error("CONN ERRORED: ", conn, evt);
+			logger.error("CONN ERRORED: ", conn, evt);
 		};
 		conn.dataChannel = new QueuedConnection(dataChannel);
 	}
@@ -322,7 +312,7 @@ window.DCDN = (function(){
 		var headerLengthField = new Uint16Array(buf, 0, 1);
 		headerLengthField[0] = headerString.length;
 		if(headerLengthField[0] !== headerString.length){
-			return console.error("Tried to send a message longer than is possible.");
+			return logger.error("Tried to send a message longer than is possible.");
 		}
 
 		var headerBuf = new Uint8Array(buf, headerStringOffset, headerString.length);
@@ -332,7 +322,7 @@ window.DCDN = (function(){
 		var binaryBuf = new Uint8Array(buf, binaryOffset);
 		binaryBuf.set(binary);
 
-		console.log(performance.now() + " SENT [%s] [Binary: %sB] %o", header.type, binary.length, header);
+		logger.log(performance.now() + " SENT [%s] [Binary: %sB] %o", header.type, binary.length, header);
 		connection.send(buf);
 	}
 
@@ -378,15 +368,15 @@ window.DCDN = (function(){
 		var header = JSON.parse(uint8Array2str(new Uint8Array(msgEvent.data, 2, headerLength)));
 		var binary = new Uint8Array(msgEvent.data, 2+headerLength);
 
-		console.log(performance.now() + " GOT [%s] [Binary: %sB] %o", header.type, binary.length, header);
+		logger.log(performance.now() + " GOT [%s] [Binary: %sB] %o", header.type, binary.length, header);
 
 		if(! ("type" in header) ){
-			console.error("Got message with no type: %o", header);
+			logger.error("Got message with no type: %o", header);
 			return;
 		}
 
 		if(! (header.type in handlers) ){
-			console.error("Got message with unknown type: %o", header);
+			logger.error("Got message with unknown type: %o", header);
 			return;
 		}
 
@@ -395,7 +385,7 @@ window.DCDN = (function(){
 
 	function recvMetadata(message){
 		if(!(message.url in resourceHandles)){
-			return console.log("Got metadata for an unrequested URL: " + message.url);
+			return logger.log("Got metadata for an unrequested URL: " + message.url);
 		}
 
 		// Stores metadata, sets up chunk queue and makes a few requests (Limited by the concurrent connection limit)
@@ -407,19 +397,19 @@ window.DCDN = (function(){
 		handle.chunks = [];
 		handle.lastYeilded = 0; // Keep track of how many chunks we have yeilded to the client
 
-		if(meta.peers.length > 0){
-			for(var i = 0; i < meta.chunkcount; i++){
-				chunkRequestQueue.push(new Chunk(meta, i));
-			}
-			scheduleChunks();
-		} else {
-			httpChunkRequest(meta, 0, meta.chunkcount);
+		// Get about 10% of the file from HTTP to allow peers time to connect
+		var httpChunks = Math.min(Math.ceil(HTTP_INTITIAL_LOAD_PERC * meta.chunkcount), HTTP_INTITIAL_LOAD_MAX_CHUNKS);
+		httpChunkRequest(meta, 0, httpChunks);
+
+		for(var i = httpChunks; i < meta.chunkcount; i++){
+			chunkRequestQueue.push(new Chunk(meta, i));
 		}
+		scheduleChunks();
 	}
 
 	function recvChunk(message, conn, binary){
 		if(!(message.url in resourceHandles)){
-			return console.log("Got chunk for an unrequested URL: " + message.url);
+			return logger.log("Got chunk for an unrequested URL: " + message.url);
 		}
 
 		// Stores chunk, checks if done, calls callback if so
@@ -436,13 +426,10 @@ window.DCDN = (function(){
 			}
 		}
 
-		handle.lastYeilded = inOrderComplete.length;
 		if((typeof handle.onprogress === "function") && (inOrderComplete.length > handle.lastYeilded)){
-			handle.onprogress(function(){
-				var blob = new Blob(inOrderComplete, {type: handle.meta.contenttype});
-				return URL.createObjectURL(blob);
-			});
+			handle.onprogress(handle.meta, inOrderComplete);
 		}
+		handle.lastYeilded = inOrderComplete.length;
 
 		if((typeof handle.oncomplete === "function") && (inOrderComplete.length === handle.meta.chunkcount)){
 			handle.oncomplete(function(){
@@ -458,7 +445,7 @@ window.DCDN = (function(){
 
 	function recvChunkFail(message){
 		if(!(message.url in resourceHandles)){
-			return console.log("Got chunkfail for an unrequested URL: " + message.url);
+			return logger.log("Got chunkfail for an unrequested URL: " + message.url);
 		}
 
 		chunkRequestQueue.unshift(new Chunk(resourceHandles[message.url].meta, message.chunk));
@@ -481,7 +468,7 @@ window.DCDN = (function(){
 		} else {
 			if(typeof resourceHandles[message.url] === "undefined"){
 				// TODO Good stat
-				console.log("Got request for a URL we dont have at all: " + message.url);
+				logger.log("Got request for a URL we dont have at all: " + message.url);
 			}
 
 			reply.type = "chunkfail";
@@ -512,7 +499,7 @@ window.DCDN = (function(){
 	}
 
 	function recvError(message){
-		console.error("Server error: %o", message);
+		logger.error("Server error: %o", message);
 	}
 
 
