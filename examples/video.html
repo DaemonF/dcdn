@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>DCDN Example</title>
+	</head>
+	<body>
+		<h1>Video:</h1>
+		<table>
+			<tr>
+				<td>
+					<div>
+						<h3>Without DCDN</h3>
+						<video width="320" height="240" src="test.webm" controls autoplay></video>
+					</div>
+				</td>
+				<td>
+					<div>
+						<h3>With DCDN</h3>
+						<video width="320" height="240" data-src="test.webm" controls autoplay></video>
+					</div>
+				</td>
+			</tr>
+		</table>
+		<script type='text/javascript' src='../dcdn.js'></script>
+		<script type="text/javascript" src="dcdn_example_video_scraper.js"></script>
+	</body>
+</html>
